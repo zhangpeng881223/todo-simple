@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file>components/IconButton.qml</file>
+        <file>components/PriorityMenu.qml</file>
+        <file>components/Toast.qml</file>
+        <file>assets/trash-hover.svg</file>
+        <file>assets/trash-muted.svg</file>
+        <file>CalendarWindow.qml</file>
+        <file>EventEditorWindow.qml</file>
+        <file>ListWindow.qml</file>
+        <file>NoteWindow.qml</file>
+        <file>SettingsWindow.qml</file>
+        <file>Theme.qml</file>
+    </qresource>
+</RCC>

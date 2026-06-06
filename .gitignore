@@ -1,0 +1,16 @@
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.cmake
+*.user
+*.autosave
+compile_commands.json
+.DS_Store
+*.png
+*.log
+compare-new/
+compare-old/
+final-compare/
+leftbar-compare/
+tune-260606/
