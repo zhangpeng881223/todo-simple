@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file>components/IconButton.qml</file>
+        <file>components/LiquidGlassSurface.qml</file>
         <file>qmldir</file>
         <file>components/PriorityMenu.qml</file>
         <file>components/Toast.qml</file>

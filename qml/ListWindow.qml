@@ -25,14 +25,14 @@ D.ApplicationWindow {
     readonly property bool lightTheme: app.theme === "light"
                                        || (app.theme === "system"
                                            && D.ApplicationHelper.themeType === D.ApplicationHelper.LightType)
-    readonly property color windowColor: lightTheme ? "#ffffff" : "#242526"
-    readonly property color titlebarColor: lightTheme ? "#ffffff" : "#18191a"
+    readonly property color windowColor: lightTheme ? Qt.rgba(1, 1, 1, 0.58) : Qt.rgba(36 / 255, 37 / 255, 38 / 255, 0.78)
+    readonly property color titlebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(24 / 255, 25 / 255, 26 / 255, 0.72)
     readonly property color sidebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.54) : "#222324"
     readonly property color sidebarGlassBlend: lightTheme ? Qt.rgba(1, 1, 1, 0.52) : "#222324"
     readonly property color sidebarGlassTop: lightTheme ? Qt.rgba(1, 1, 1, 0.74) : "#222324"
     readonly property color sidebarGlassBottom: lightTheme ? Qt.rgba(244 / 255, 255 / 255, 238 / 255, 0.24) : "#222324"
     readonly property color sidebarGlassBorder: lightTheme ? Qt.rgba(232 / 255, 238 / 255, 228 / 255, 0.52) : "transparent"
-    readonly property color detailColor: lightTheme ? "#ffffff" : windowColor
+    readonly property color detailColor: windowColor
     readonly property color cardColor: lightTheme ? "#ffffff" : "#2b2c2e"
     readonly property color cardHoverColor: lightTheme ? "#f0f0f0" : "#333538"
     readonly property color lineColor: lightTheme ? Qt.rgba(0, 0, 0, 0.12) : "#3a3c3e"
@@ -60,8 +60,8 @@ D.ApplicationWindow {
     property bool applyingAppTheme: false
     readonly property int rowDragStep: 51
     readonly property int sidebarWidth: 300
-    readonly property int sidebarInset: lightTheme ? 18 : 0
-    readonly property int sidebarRadius: lightTheme ? 12 : 0
+    readonly property int sidebarInset: lightTheme ? 6 : 0
+    readonly property int sidebarRadius: lightTheme ? 16 : 0
     readonly property int titlebarReserve: 52
     readonly property int sidebarShadowLeftPad: 120
     readonly property int sidebarShadowTopPad: 110
@@ -288,9 +288,25 @@ D.ApplicationWindow {
         id: windowShell
         anchors.fill: parent
         radius: 0
-        color: root.windowColor
+        color: "transparent"
         clip: false
         antialiasing: true
+
+        LiquidGlassSurface {
+            id: windowGlass
+            anchors.fill: parent
+            radius: root.lightTheme ? 12 : 0
+            variant: "window"
+            lightTheme: root.lightTheme
+            density: root.lightTheme ? 0.24 : 0.18
+            tintOpacity: root.lightTheme ? 0.48 : 0.20
+            edgeOpacity: root.lightTheme ? 0.52 : 0.14
+            highlightOpacity: root.lightTheme ? 0.34 : 0.10
+            lensOpacity: root.lightTheme ? 0.13 : 0.05
+            chromaOpacity: root.lightTheme ? 0.018 : 0.010
+            blendColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(0.09, 0.10, 0.11, 0.62)
+            tintColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.44) : Qt.rgba(0.09, 0.10, 0.11, 0.66)
+        }
 
         RowLayout {
             anchors.fill: parent
@@ -300,50 +316,34 @@ D.ApplicationWindow {
                 Layout.preferredWidth: root.sidebarWidth
                 Layout.fillHeight: true
 
-                Image {
-                    id: sidebarDropShadow
-                    x: root.sidebarInset - root.sidebarShadowLeftPad
-                    y: root.sidebarInset - root.sidebarShadowTopPad
-                    width: root.sidebarWidth - root.sidebarInset * 2
-                           + root.sidebarShadowLeftPad + root.sidebarShadowRightPad
-                    height: parent.height - root.sidebarInset * 2
-                            + root.sidebarShadowTopPad + root.sidebarShadowBottomPad
-                    source: "qrc:/assets/sidebar-glass-shadow-tall.png"
+                Rectangle {
+                    id: sidebarSoftSeparation
+                    anchors.fill: parent
+                    anchors.margins: root.sidebarInset
+                    radius: root.sidebarRadius
                     visible: root.lightTheme
-                    opacity: 0.9
-                    smooth: true
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Qt.rgba(0, 0, 0, 0.035)
+                    antialiasing: true
                 }
 
-                Rectangle {
+                LiquidGlassSurface {
                     id: sidebarPanel
                     anchors.fill: parent
                     anchors.margins: root.sidebarInset
                     radius: root.sidebarRadius
-                    color: root.lightTheme ? "transparent" : root.sidebarColor
-                    border.width: root.lightTheme ? 1 : 0
-                    border.color: root.sidebarGlassBorder
-                    antialiasing: true
-                    clip: true
-
-                    D.StyledBehindWindowBlur {
-                        control: sidebarPanel
-                        anchors.fill: parent
-                        cornerRadius: sidebarPanel.radius
-                        blendColor: valid ? root.sidebarGlassBlend : root.sidebarColor
-                        visible: root.lightTheme
-                    }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: sidebarPanel.radius
-                        antialiasing: true
-                        gradient: Gradient {
-                            orientation: Gradient.Vertical
-                            GradientStop { position: 0.0; color: root.sidebarGlassTop }
-                            GradientStop { position: 0.56; color: root.sidebarColor }
-                            GradientStop { position: 1.0; color: root.sidebarGlassBottom }
-                        }
-                    }
+                    variant: "frosted"
+                    lightTheme: root.lightTheme
+                    density: root.lightTheme ? 0.22 : 0.24
+                    tintOpacity: root.lightTheme ? 0.30 : 0.22
+                    edgeOpacity: root.lightTheme ? 0.54 : 0.16
+                    highlightOpacity: root.lightTheme ? 0.18 : 0.10
+                    lensOpacity: root.lightTheme ? 0.04 : 0.04
+                    chromaOpacity: 0
+                    thicknessOpacity: 0
+                    blendColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.30) : root.sidebarGlassBlend
+                    tintColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.28) : root.sidebarColor
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -365,10 +365,19 @@ D.ApplicationWindow {
                                 anchors.rightMargin: 8
                                 height: 36
                                 radius: 100
-                                color: root.lightTheme ? "#f4f4f4" : "#333538"
+                                color: root.lightTheme
+                                       ? Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.72 : 0.52)
+                                       : Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.12 : 0.08)
                                 border.width: 1
-                                border.color: root.lightTheme ? "#e2e2e2" : "#45474a"
+                                border.color: root.lightTheme
+                                              ? Qt.rgba(0, 0, 0, searchInput.activeFocus ? 0.16 : (searchHover.hovered ? 0.12 : 0.08))
+                                              : Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.20 : 0.12)
                                 antialiasing: true
+
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                HoverHandler { id: searchHover }
 
                                 Image {
                                     id: searchIcon
@@ -430,9 +439,17 @@ D.ApplicationWindow {
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                 }
                                 background: Rectangle {
-                                    radius: 8
-                                    color: addNoteButton.hovered ? root.cardHoverColor : "transparent"
+                                    radius: 18
+                                    color: root.lightTheme
+                                           ? Qt.rgba(1, 1, 1, addNoteButton.pressed ? 0.78 : (addNoteButton.hovered ? 0.66 : 0.52))
+                                           : Qt.rgba(1, 1, 1, addNoteButton.pressed ? 0.16 : (addNoteButton.hovered ? 0.12 : 0.08))
+                                    border.width: 1
+                                    border.color: root.lightTheme
+                                                  ? Qt.rgba(0, 0, 0, addNoteButton.hovered ? 0.14 : 0.08)
+                                                  : Qt.rgba(1, 1, 1, addNoteButton.hovered ? 0.20 : 0.12)
+                                    antialiasing: true
                                     Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation { duration: 120 } }
                                 }
                             }
                         }
@@ -1218,8 +1235,8 @@ D.ApplicationWindow {
 	        property bool emphasized: false
 	        signal triggered()
 
-	        width: contentRow.implicitWidth
-	        height: 32
+	        width: contentRow.implicitWidth + 22
+	        height: 34
         hoverEnabled: true
         padding: 0
         onClicked: triggered()
@@ -1244,18 +1261,37 @@ D.ApplicationWindow {
 	                text: actionButton.label
 	                color: actionButton.danger
 	                       ? root.redColor
-	                       : root.textColor
+	                       : (actionButton.hovered || actionButton.active || actionButton.emphasized ? root.blueColor : root.textColor)
 	                font.pixelSize: 12
 	                font.weight: Font.DemiBold
 	                Behavior on color { ColorAnimation { duration: 120 } }
 	            }
 	        }
 
-	        background: Rectangle {
-	            radius: 8
-	            color: "transparent"
-	            border.width: 0
-	            border.color: root.lineColor
+	        background: LiquidGlassSurface {
+	            radius: 17
+                variant: "control"
+                lightTheme: root.lightTheme
+                interactive: true
+                hovered: actionButton.hovered
+                active: actionButton.active || actionButton.emphasized
+                pressed: actionButton.pressed
+                density: actionButton.danger ? 0.48 : 0.54
+                tintOpacity: actionButton.danger
+                             ? (actionButton.hovered ? 0.12 : 0.035)
+                             : (actionButton.hovered || actionButton.active || actionButton.emphasized ? 0.22 : 0.055)
+                edgeOpacity: actionButton.hovered || actionButton.active || actionButton.emphasized ? 0.62 : 0.16
+                highlightOpacity: actionButton.hovered || actionButton.active || actionButton.emphasized ? 0.56 : 0.20
+                lensOpacity: actionButton.hovered || actionButton.active || actionButton.emphasized ? 0.34 : 0.16
+                chromaOpacity: actionButton.hovered || actionButton.active || actionButton.emphasized ? 0.035 : 0.012
+                blendColor: root.lightTheme
+                            ? Qt.rgba(1, 1, 1, actionButton.hovered ? 0.18 : 0.055)
+                            : Qt.rgba(1, 1, 1, actionButton.hovered ? 0.13 : 0.06)
+                tintColor: actionButton.danger
+                           ? Qt.rgba(255 / 255, 95 / 255, 88 / 255, actionButton.hovered ? 0.12 : 0.040)
+                           : (root.lightTheme
+                              ? Qt.rgba(1, 1, 1, actionButton.hovered ? 0.22 : 0.050)
+                              : Qt.rgba(1, 1, 1, actionButton.hovered ? 0.12 : 0.06))
 	        }
 	    }
 }
