@@ -9,10 +9,13 @@ set(CMAKE_AUTORCC ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Gui Quick QuickControls2 Widgets)
+find_package(Dtk6Gui REQUIRED)
+find_package(Dtk6Widget REQUIRED)
 
 add_executable(todo260606
-    src/EventEditorController.cpp
-    src/EventEditorController.h
+    # Calendar/event editor is parked for the current version.
+    # src/EventEditorController.cpp
+    # src/EventEditorController.h
     src/NoteController.cpp
     src/NoteController.h
     src/TodoApp.cpp
@@ -28,6 +31,9 @@ target_link_libraries(todo260606
         Qt${QT_VERSION_MAJOR}::Quick
         Qt${QT_VERSION_MAJOR}::QuickControls2
         Qt${QT_VERSION_MAJOR}::Widgets
+        Dtk6::Gui
+        Dtk6::Widget
 )
 
 install(TARGETS todo260606 RUNTIME DESTINATION bin)
+install(FILES todo260606.desktop DESTINATION share/applications)

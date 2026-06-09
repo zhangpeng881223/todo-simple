@@ -15,6 +15,7 @@ class NoteController : public QObject
     Q_PROPERTY(QVariantList todos READ todos NOTIFY noteChanged)
     Q_PROPERTY(int completedCount READ completedCount NOTIFY noteChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY noteChanged)
+    Q_PROPERTY(QString summaryTemplate READ summaryTemplate WRITE setSummaryTemplate NOTIFY summaryTemplateChanged)
 
 public:
     NoteController(TodoApp *app, const QString &noteId, QObject *parent = nullptr);
@@ -26,6 +27,8 @@ public:
     QVariantList todos() const;
     int completedCount() const;
     int totalCount() const;
+    QString summaryTemplate() const;
+    void setSummaryTemplate(const QString &summaryTemplate);
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE QString addTodo(int afterIndex = -1);
@@ -38,9 +41,11 @@ public:
     Q_INVOKABLE void moveTodoById(const QString &todoId, int toDisplayIndex);
     Q_INVOKABLE void hide();
     Q_INVOKABLE QString summarizeToday();
+    Q_INVOKABLE void resetSummaryTemplate();
 
 signals:
     void noteChanged();
+    void summaryTemplateChanged();
 
 private:
     QJsonObject note() const;

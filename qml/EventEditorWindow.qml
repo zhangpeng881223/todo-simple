@@ -1,3 +1,6 @@
+/*
+Calendar/event editor is parked for the current version.
+
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
@@ -144,3 +147,4 @@ Item {
         Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
     }
 }
+*/

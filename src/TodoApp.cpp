@@ -1,6 +1,7 @@
 #include "TodoApp.h"
 
-#include "EventEditorController.h"
+// Calendar/event editor is parked for the current version.
+// #include "EventEditorController.h"
 #include "NoteController.h"
 
 #include <QApplication>
@@ -11,6 +12,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -18,10 +20,16 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QProcess>
+#include <QDebug>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QScreen>
+#include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QWindow>
+#include <DAboutDialog>
+#include <DGuiApplicationHelper>
 
 namespace {
 constexpr int MaxNotes = 999;
@@ -70,6 +78,60 @@ QString completionSummary(const QJsonArray &todos)
     return QStringLiteral("%1/%2").arg(completed).arg(total);
 }
 
+QIcon aboutProductIcon()
+{
+    const QPixmap source(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
+    if (source.isNull()) {
+        return QIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
+    }
+
+    constexpr int canvasSize = 128;
+    constexpr int visualSize = 112;
+    QPixmap canvas(canvasSize, canvasSize);
+    canvas.fill(Qt::transparent);
+
+    QPainter painter(&canvas);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const QRect target((canvasSize - visualSize) / 2,
+                       (canvasSize - visualSize) / 2,
+                       visualSize,
+                       visualSize);
+    painter.drawPixmap(target, source);
+
+    return QIcon(canvas);
+}
+
+QString appDataDir()
+{
+    QString documentsPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (documentsPath.isEmpty()) {
+        documentsPath = QDir::homePath();
+    }
+    return QDir(documentsPath).filePath(QStringLiteral("小U待办"));
+}
+
+void migrateLegacyDataDir(const QString &targetDir)
+{
+    const QString legacyDir = QDir::homePath() + QStringLiteral("/.todo260606");
+    if (!QDir(legacyDir).exists()) {
+        return;
+    }
+
+    QDir().mkpath(targetDir);
+    const QStringList dataFiles = {
+        QStringLiteral("notes.json"),
+        QStringLiteral("events.json"),
+        QStringLiteral("settings.json")
+    };
+    for (const QString &fileName : dataFiles) {
+        const QString source = QDir(legacyDir).filePath(fileName);
+        const QString target = QDir(targetDir).filePath(fileName);
+        if (QFile::exists(source) && !QFile::exists(target)) {
+            QFile::copy(source, target);
+        }
+    }
+}
+
 QStringList todoLines(const QJsonArray &todos)
 {
     QStringList lines;
@@ -96,7 +158,7 @@ QStringList todoLines(const QJsonArray &todos)
 
 TodoApp::TodoApp(QObject *parent)
     : QObject(parent)
-    , m_dataDir(QDir::homePath() + QStringLiteral("/.todo260606"))
+    , m_dataDir(appDataDir())
 {
     m_settings.insert(QStringLiteral("theme"), QStringLiteral("dark"));
     m_settings.insert(QStringLiteral("noteTheme"), QStringLiteral("dark"));
@@ -114,8 +176,15 @@ TodoApp::~TodoApp()
 
 void TodoApp::initialize()
 {
+    migrateLegacyDataDir(m_dataDir);
     QDir().mkpath(m_dataDir);
     loadData();
+    connect(Dtk::Gui::DGuiApplicationHelper::instance(),
+            &Dtk::Gui::DGuiApplicationHelper::paletteTypeChanged,
+            this,
+            &TodoApp::syncSettingFromDtkPalette,
+            Qt::UniqueConnection);
+    syncDtkPalette();
     ensureSeedData();
     createTray();
 
@@ -137,16 +206,16 @@ void TodoApp::initialize()
     QTimer::singleShot(0, this, [this, args]() {
         if (args.contains(QStringLiteral("--show-all"))) {
             showListWindow();
-            showCalendarWindow();
+            // showCalendarWindow();
             showSettingsWindow();
             return;
         }
         if (args.contains(QStringLiteral("--list"))) {
             showListWindow();
         }
-        if (args.contains(QStringLiteral("--calendar"))) {
-            showCalendarWindow();
-        }
+        // if (args.contains(QStringLiteral("--calendar"))) {
+        //     showCalendarWindow();
+        // }
         if (args.contains(QStringLiteral("--settings"))) {
             showSettingsWindow();
         }
@@ -156,28 +225,43 @@ void TodoApp::initialize()
 QVariantList TodoApp::notesList() const
 {
     QVariantList list;
+    QVector<QJsonObject> notes;
     for (const QJsonValue &value : m_notes) {
-        const QJsonObject note = value.toObject();
+        notes.append(value.toObject());
+    }
+    std::sort(notes.begin(), notes.end(), [](const QJsonObject &a, const QJsonObject &b) {
+        return valueString(a, QStringLiteral("updatedDate"), valueString(a, QStringLiteral("createdDate"))) >
+               valueString(b, QStringLiteral("updatedDate"), valueString(b, QStringLiteral("createdDate")));
+    });
+
+    for (const QJsonObject &note : notes) {
         const QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+        const QJsonArray sortedTodos = sortedTodosForDisplay(todos);
         int completed = 0;
         for (const QJsonValue &todoValue : todos) {
             if (todoValue.toObject().value(QStringLiteral("completed")).toBool(false)) {
                 ++completed;
             }
         }
+        const QString dateSource = valueString(note, QStringLiteral("updatedDate"), note.value(QStringLiteral("createdDate")).toString());
+        const QDateTime listDate = QDateTime::fromString(dateSource, Qt::ISODate);
         QVariantMap item;
         item.insert(QStringLiteral("id"), note.value(QStringLiteral("id")).toVariant().toString());
         item.insert(QStringLiteral("title"), note.value(QStringLiteral("title")).toString(QStringLiteral("无标题")));
         item.insert(QStringLiteral("createdDate"), note.value(QStringLiteral("createdDate")).toString());
-        item.insert(QStringLiteral("dateText"), QDateTime::fromString(note.value(QStringLiteral("createdDate")).toString(), Qt::ISODate).date().toString(QStringLiteral("yyyy/M/d")));
+        item.insert(QStringLiteral("updatedDate"), dateSource);
+        item.insert(QStringLiteral("dateText"), listDate.isValid() ? listDate.date().toString(QStringLiteral("yyyy/MM/dd")) : QString());
+        item.insert(QStringLiteral("visible"), note.value(QStringLiteral("visible")).toBool(false));
         item.insert(QStringLiteral("completed"), completed);
         item.insert(QStringLiteral("total"), todos.size());
         QVariantList todoList;
-        for (const QJsonValue &todoValue : todos) {
+        for (const QJsonValue &todoValue : sortedTodos) {
             const QJsonObject todo = todoValue.toObject();
             QVariantMap todoMap;
+            todoMap.insert(QStringLiteral("id"), todo.value(QStringLiteral("id")).toVariant().toString());
             todoMap.insert(QStringLiteral("text"), todo.value(QStringLiteral("text")).toString());
             todoMap.insert(QStringLiteral("completed"), todo.value(QStringLiteral("completed")).toBool(false));
+            todoMap.insert(QStringLiteral("priority"), todo.value(QStringLiteral("priority")).toString(QStringLiteral("gray")));
             todoList.append(todoMap);
         }
         item.insert(QStringLiteral("todos"), todoList);
@@ -200,6 +284,64 @@ QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("not
 QString TodoApp::priorityStyle() const { return m_settings.value(QStringLiteral("priorityStyle")).toString(QStringLiteral("colorful")); }
 int TodoApp::opacity() const { return m_settings.value(QStringLiteral("opacity")).toInt(60); }
 QString TodoApp::storagePath() const { return m_dataDir; }
+
+void TodoApp::syncDtkPalette()
+{
+    auto *helper = Dtk::Gui::DGuiApplicationHelper::instance();
+    QSignalBlocker blocker(helper);
+    m_syncingDtkPalette = true;
+    const QString themeSetting = theme();
+    if (themeSetting == QStringLiteral("system")) {
+        helper->setPaletteType(Dtk::Gui::DGuiApplicationHelper::UnknownType);
+    } else if (themeSetting == QStringLiteral("light")) {
+        helper->setPaletteType(Dtk::Gui::DGuiApplicationHelper::LightType);
+    } else {
+        helper->setPaletteType(Dtk::Gui::DGuiApplicationHelper::DarkType);
+    }
+    m_syncingDtkPalette = false;
+}
+
+void TodoApp::syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType)
+{
+    if (m_syncingDtkPalette) {
+        return;
+    }
+
+    QString nextTheme;
+    switch (paletteType) {
+    case Dtk::Gui::DGuiApplicationHelper::UnknownType:
+        nextTheme = QStringLiteral("system");
+        break;
+    case Dtk::Gui::DGuiApplicationHelper::LightType:
+        nextTheme = QStringLiteral("light");
+        break;
+    case Dtk::Gui::DGuiApplicationHelper::DarkType:
+        nextTheme = QStringLiteral("dark");
+        break;
+    }
+
+    if (nextTheme.isEmpty() || nextTheme == theme()) {
+        return;
+    }
+
+    m_settings.insert(QStringLiteral("theme"), nextTheme);
+    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    saveSettings();
+    emit settingsChanged();
+}
+
+QString TodoApp::noteSummaryTemplate() const
+{
+    return m_settings.value(QStringLiteral("noteSummaryTemplate")).toString(defaultNoteSummaryTemplate());
+}
+
+void TodoApp::setNoteSummaryTemplate(const QString &summaryTemplate)
+{
+    const QString trimmed = summaryTemplate.trimmed();
+    m_settings.insert(QStringLiteral("noteSummaryTemplate"), trimmed.isEmpty() ? defaultNoteSummaryTemplate() : summaryTemplate);
+    saveSettings();
+    emit settingsChanged();
+}
 
 QJsonObject TodoApp::noteById(const QString &noteId) const
 {
@@ -238,6 +380,13 @@ void TodoApp::updateNoteTodos(const QString &noteId, const QJsonArray &todos)
     updateNote(noteId, patch);
 }
 
+void TodoApp::updateNoteTitle(const QString &noteId, const QString &title)
+{
+    QJsonObject patch;
+    patch.insert(QStringLiteral("title"), title.trimmed().isEmpty() ? QStringLiteral("未命名待办") : title.trimmed());
+    updateNote(noteId, patch);
+}
+
 QString TodoApp::summarizeNote(const QString &noteId)
 {
     const QJsonObject note = noteById(noteId);
@@ -245,6 +394,156 @@ QString TodoApp::summarizeNote(const QString &noteId)
         return QStringLiteral("未找到待办窗口");
     }
     return sendPromptToUosAi(buildCurrentNoteSummaryPrompt(note));
+}
+
+QString TodoApp::addTodoToNote(const QString &noteId, const QString &text)
+{
+    if (noteId.isEmpty()) {
+        return QString();
+    }
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty()) {
+        return QString();
+    }
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty()) {
+        return QString();
+    }
+    QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+    const QString id = QString::number(QDateTime::currentMSecsSinceEpoch());
+    todos.append(QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("text"), trimmed},
+        {QStringLiteral("completed"), false},
+        {QStringLiteral("priority"), QStringLiteral("gray")}
+    });
+    updateNoteTodos(noteId, todos);
+    return id;
+}
+
+void TodoApp::commitNoteTodoText(const QString &noteId, const QString &todoId, const QString &text)
+{
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty() || todoId.isEmpty()) {
+        return;
+    }
+    QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+    for (int i = 0; i < todos.size(); ++i) {
+        QJsonObject todo = todos.at(i).toObject();
+        if (todo.value(QStringLiteral("id")).toVariant().toString() != todoId) {
+            continue;
+        }
+        const QString trimmed = text.trimmed();
+        if (trimmed.isEmpty()) {
+            todos.removeAt(i);
+        } else {
+            todo.insert(QStringLiteral("text"), trimmed);
+            todos.replace(i, todo);
+        }
+        updateNoteTodos(noteId, todos);
+        return;
+    }
+}
+
+void TodoApp::toggleNoteTodo(const QString &noteId, const QString &todoId)
+{
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty() || todoId.isEmpty()) {
+        return;
+    }
+    QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+    for (int i = 0; i < todos.size(); ++i) {
+        QJsonObject todo = todos.at(i).toObject();
+        if (todo.value(QStringLiteral("id")).toVariant().toString() != todoId) {
+            continue;
+        }
+        todo.insert(QStringLiteral("completed"), !todo.value(QStringLiteral("completed")).toBool(false));
+        todos.replace(i, todo);
+        updateNoteTodos(noteId, todos);
+        return;
+    }
+}
+
+void TodoApp::deleteNoteTodo(const QString &noteId, const QString &todoId)
+{
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty() || todoId.isEmpty()) {
+        return;
+    }
+    QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+    for (int i = 0; i < todos.size(); ++i) {
+        if (todos.at(i).toObject().value(QStringLiteral("id")).toVariant().toString() == todoId) {
+            todos.removeAt(i);
+            updateNoteTodos(noteId, todos);
+            return;
+        }
+    }
+}
+
+void TodoApp::setNoteTodoPriority(const QString &noteId, const QString &todoId, const QString &priority)
+{
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty() || todoId.isEmpty()) {
+        return;
+    }
+    QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+    for (int i = 0; i < todos.size(); ++i) {
+        QJsonObject todo = todos.at(i).toObject();
+        if (todo.value(QStringLiteral("id")).toVariant().toString() != todoId) {
+            continue;
+        }
+        todo.insert(QStringLiteral("priority"), priority);
+        todos.replace(i, todo);
+        updateNoteTodos(noteId, todos);
+        return;
+    }
+}
+
+void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int toDisplayIndex)
+{
+    QJsonObject note = noteById(noteId);
+    if (note.isEmpty() || todoId.isEmpty()) {
+        return;
+    }
+
+    const QJsonArray displayTodos = sortedTodosForDisplay(note.value(QStringLiteral("todos")).toArray());
+    if (displayTodos.isEmpty()) {
+        return;
+    }
+
+    int from = -1;
+    int firstCompleted = displayTodos.size();
+    for (int i = 0; i < displayTodos.size(); ++i) {
+        const QJsonObject object = displayTodos.at(i).toObject();
+        if (object.value(QStringLiteral("completed")).toBool(false) && firstCompleted == displayTodos.size()) {
+            firstCompleted = i;
+        }
+        if (object.value(QStringLiteral("id")).toVariant().toString() == todoId) {
+            from = i;
+        }
+    }
+
+    if (from < 0 || displayTodos.at(from).toObject().value(QStringLiteral("completed")).toBool(false)) {
+        return;
+    }
+
+    const int maxUnfinishedIndex = qMax(0, firstCompleted - 1);
+    const int to = qBound(0, toDisplayIndex, maxUnfinishedIndex);
+    if (from == to) {
+        return;
+    }
+
+    QVector<QJsonObject> objects;
+    for (const QJsonValue &value : displayTodos) {
+        objects.append(value.toObject());
+    }
+    objects.move(from, to);
+
+    QJsonArray next;
+    for (const QJsonObject &object : objects) {
+        next.append(object);
+    }
+    updateNoteTodos(noteId, next);
 }
 
 void TodoApp::createNewNote()
@@ -363,33 +662,58 @@ void TodoApp::deleteNote(const QString &noteId)
 
 void TodoApp::showListWindow()
 {
-    if (m_listView) {
-        m_listView->show();
-        m_listView->raise();
-        m_listView->requestActivate();
+    if (m_listWindow) {
+        m_listWindow->show();
+        m_listWindow->raise();
+        m_listWindow->requestActivate();
         return;
     }
-    m_listView = createView(QUrl(QStringLiteral("qrc:/ListWindow.qml")), QSize(400, 500), QSize(360, 420), false, false);
-    m_listView->rootContext()->setContextProperty(QStringLiteral("app"), this);
-    m_listView->setSource(QUrl(QStringLiteral("qrc:/ListWindow.qml")));
-    connect(m_listView, &QObject::destroyed, this, [this]() { m_listView = nullptr; });
-    m_listView->show();
+
+    m_listEngine = new QQmlEngine(this);
+    m_listEngine->rootContext()->setContextProperty(QStringLiteral("app"), this);
+    QQmlComponent component(m_listEngine, QUrl(QStringLiteral("qrc:/ListWindow.qml")));
+    QObject *object = component.create();
+    if (!object) {
+        qWarning() << component.errors();
+        m_listEngine->deleteLater();
+        m_listEngine = nullptr;
+        return;
+    }
+    auto *window = qobject_cast<QWindow *>(object);
+    if (!window) {
+        qWarning() << "ListWindow root is not a QWindow";
+        object->deleteLater();
+        m_listEngine->deleteLater();
+        m_listEngine = nullptr;
+        return;
+    }
+    m_listWindow = window;
+    connect(window, &QObject::destroyed, this, [this]() {
+        m_listWindow = nullptr;
+        if (m_listEngine) {
+            m_listEngine->deleteLater();
+            m_listEngine = nullptr;
+        }
+    });
+    window->show();
+    window->raise();
+    window->requestActivate();
 }
 
-void TodoApp::showCalendarWindow()
-{
-    if (m_calendarView) {
-        m_calendarView->show();
-        m_calendarView->raise();
-        m_calendarView->requestActivate();
-        return;
-    }
-    m_calendarView = createView(QUrl(QStringLiteral("qrc:/CalendarWindow.qml")), QSize(900, 600), QSize(700, 500), true, true);
-    m_calendarView->rootContext()->setContextProperty(QStringLiteral("app"), this);
-    m_calendarView->setSource(QUrl(QStringLiteral("qrc:/CalendarWindow.qml")));
-    connect(m_calendarView, &QObject::destroyed, this, [this]() { m_calendarView = nullptr; });
-    m_calendarView->show();
-}
+// void TodoApp::showCalendarWindow()
+// {
+//     if (m_calendarView) {
+//         m_calendarView->show();
+//         m_calendarView->raise();
+//         m_calendarView->requestActivate();
+//         return;
+//     }
+//     m_calendarView = createView(QUrl(QStringLiteral("qrc:/CalendarWindow.qml")), QSize(900, 600), QSize(700, 500), true, true);
+//     m_calendarView->rootContext()->setContextProperty(QStringLiteral("app"), this);
+//     m_calendarView->setSource(QUrl(QStringLiteral("qrc:/CalendarWindow.qml")));
+//     connect(m_calendarView, &QObject::destroyed, this, [this]() { m_calendarView = nullptr; });
+//     m_calendarView->show();
+// }
 
 void TodoApp::showSettingsWindow()
 {
@@ -399,27 +723,43 @@ void TodoApp::showSettingsWindow()
         m_settingsView->requestActivate();
         return;
     }
-    m_settingsView = createView(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")), QSize(480, 460), QSize(420, 360), true, false);
+    m_settingsView = createView(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")), QSize(480, 430), QSize(420, 360), true, false);
     m_settingsView->rootContext()->setContextProperty(QStringLiteral("app"), this);
     m_settingsView->setSource(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")));
     connect(m_settingsView, &QObject::destroyed, this, [this]() { m_settingsView = nullptr; });
     m_settingsView->show();
 }
 
-void TodoApp::showEventEditor(const QVariantMap &eventData)
+void TodoApp::showAboutDialog()
 {
-    if (m_eventEditorView) {
-        m_eventEditorView->close();
-        m_eventEditorView->deleteLater();
-    }
-    m_eventEditorView = createView(QUrl(QStringLiteral("qrc:/EventEditorWindow.qml")), QSize(420, 500), QSize(380, 440), true, false);
-    auto *controller = new EventEditorController(this, eventData, m_eventEditorView);
-    m_eventEditorView->rootContext()->setContextProperty(QStringLiteral("eventEditor"), controller);
-    m_eventEditorView->rootContext()->setContextProperty(QStringLiteral("app"), this);
-    m_eventEditorView->setSource(QUrl(QStringLiteral("qrc:/EventEditorWindow.qml")));
-    connect(m_eventEditorView, &QObject::destroyed, this, [this]() { m_eventEditorView = nullptr; });
-    m_eventEditorView->show();
+    auto *dialog = new Dtk::Widget::DAboutDialog();
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    const QIcon productIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
+    dialog->setWindowIcon(productIcon);
+    dialog->setProductIcon(aboutProductIcon());
+    dialog->setProductName(QStringLiteral("小U待办"));
+    dialog->setVersion(QStringLiteral("1.0.0"));
+    dialog->setDescription(QStringLiteral("一个面向 deepin/UOS 桌面的轻量待办工具。"));
+    dialog->setLicenseEnabled(false);
+    dialog->show();
+    dialog->raise();
+    dialog->activateWindow();
 }
+
+// void TodoApp::showEventEditor(const QVariantMap &eventData)
+// {
+//     if (m_eventEditorView) {
+//         m_eventEditorView->close();
+//         m_eventEditorView->deleteLater();
+//     }
+//     m_eventEditorView = createView(QUrl(QStringLiteral("qrc:/EventEditorWindow.qml")), QSize(420, 500), QSize(380, 440), true, false);
+//     auto *controller = new EventEditorController(this, eventData, m_eventEditorView);
+//     m_eventEditorView->rootContext()->setContextProperty(QStringLiteral("eventEditor"), controller);
+//     m_eventEditorView->rootContext()->setContextProperty(QStringLiteral("app"), this);
+//     m_eventEditorView->setSource(QUrl(QStringLiteral("qrc:/EventEditorWindow.qml")));
+//     connect(m_eventEditorView, &QObject::destroyed, this, [this]() { m_eventEditorView = nullptr; });
+//     m_eventEditorView->show();
+// }
 
 void TodoApp::closeWindow(QWindow *window)
 {
@@ -432,6 +772,7 @@ void TodoApp::updateSetting(const QString &key, const QVariant &value)
 {
     m_settings.insert(key, QJsonValue::fromVariant(value));
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    syncDtkPalette();
     saveSettings();
     emit settingsChanged();
 }
@@ -476,6 +817,7 @@ QString TodoApp::importData()
     m_events = bundle.value(QStringLiteral("events")).toArray();
     m_settings = bundle.value(QStringLiteral("settings")).toObject(m_settings);
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    syncDtkPalette();
     saveNotes();
     saveEvents();
     saveSettings();
@@ -577,7 +919,7 @@ void TodoApp::createTray()
     m_trayMenu = new QMenu;
     m_trayMenu->addAction(QStringLiteral("新建待办窗口"), this, &TodoApp::createNewNote);
     m_trayMenu->addAction(QStringLiteral("所有待办"), this, &TodoApp::showListWindow);
-    m_trayMenu->addAction(QStringLiteral("日历日程"), this, &TodoApp::showCalendarWindow);
+    // m_trayMenu->addAction(QStringLiteral("日历日程"), this, &TodoApp::showCalendarWindow);
     m_trayMenu->addAction(QStringLiteral("设置"), this, &TodoApp::showSettingsWindow);
     m_trayMenu->addSeparator();
     m_trayMenu->addAction(QStringLiteral("退出"), qApp, &QApplication::quit);
@@ -745,17 +1087,21 @@ QString TodoApp::sendPromptToUosAi(const QString &prompt) const
     return QStringLiteral("已发送到 UOS AI 助手");
 }
 
+QString TodoApp::defaultNoteSummaryTemplate() const
+{
+    return QStringLiteral("请你作为我的工作助理，总结下面这个“今日待办”窗口。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 今日重点\n"
+                          "2. 已完成事项\n"
+                          "3. 未完成事项\n"
+                          "4. 下一步建议");
+}
+
 QString TodoApp::buildCurrentNoteSummaryPrompt(const QJsonObject &note) const
 {
     QStringList lines;
     const QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
-    lines << QStringLiteral("请你作为我的工作助理，总结下面这个“今日待办”窗口。")
-          << QString()
-          << QStringLiteral("请按以下结构输出，语言简洁、具体，不要编造未出现的信息：")
-          << QStringLiteral("1. 今日重点")
-          << QStringLiteral("2. 已完成事项")
-          << QStringLiteral("3. 未完成事项")
-          << QStringLiteral("4. 下一步建议")
+    lines << noteSummaryTemplate()
           << QString()
           << QStringLiteral("待办窗口标题：%1").arg(note.value(QStringLiteral("title")).toString(QStringLiteral("未命名待办")))
           << QStringLiteral("创建时间：%1").arg(formatDateTime(note.value(QStringLiteral("createdDate"))))

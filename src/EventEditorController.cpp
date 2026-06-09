@@ -1,3 +1,6 @@
+/*
+Calendar/event editor is parked for the current version.
+
 #include "EventEditorController.h"
 
 #include "TodoApp.h"
@@ -30,6 +33,7 @@ EventEditorController::EventEditorController(TodoApp *app, const QVariantMap &ev
         m_event.insert(QStringLiteral("repeat"), QStringLiteral("none"));
     }
 }
+*/
 
 QString EventEditorController::eventId() const { return m_event.value(QStringLiteral("id")).toString(); }
 bool EventEditorController::editing() const { return !eventId().isEmpty(); }

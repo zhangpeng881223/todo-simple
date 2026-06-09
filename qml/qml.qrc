@@ -1,12 +1,37 @@
 <RCC>
     <qresource prefix="/">
         <file>components/IconButton.qml</file>
+        <file>qmldir</file>
         <file>components/PriorityMenu.qml</file>
         <file>components/Toast.qml</file>
         <file>assets/trash-hover.svg</file>
         <file>assets/trash-muted.svg</file>
-        <file>CalendarWindow.qml</file>
-        <file>EventEditorWindow.qml</file>
+        <file>assets/header-ai-dark.svg</file>
+        <file>assets/header-ai-light.svg</file>
+        <file>assets/header-ai-accent.svg</file>
+        <file>assets/header-plus-dark.svg</file>
+        <file>assets/header-plus-light.svg</file>
+        <file>assets/header-close-dark.svg</file>
+        <file>assets/header-close-light.svg</file>
+        <file>assets/chevron-down-dark.svg</file>
+        <file>assets/chevron-down-light.svg</file>
+        <file>assets/data-export-dark.svg</file>
+        <file>assets/data-export-light.svg</file>
+        <file>assets/data-import-dark.svg</file>
+        <file>assets/data-import-light.svg</file>
+        <file>assets/toolbar-wrap-dark.svg</file>
+        <file>assets/toolbar-wrap-light.svg</file>
+        <file>assets/toolbar-wrap-accent.svg</file>
+        <file>assets/toolbar-desktop-dark.svg</file>
+        <file>assets/toolbar-desktop-light.svg</file>
+        <file>assets/toolbar-desktop-accent.svg</file>
+        <file>assets/search-muted.svg</file>
+        <file>assets/sidebar-glass-shadow.png</file>
+        <file>assets/sidebar-glass-shadow-tall.png</file>
+        <file>assets/xiaou-todo-app-icon.png</file>
+        <!-- Calendar/event editor is parked for the current version. -->
+        <!-- <file>CalendarWindow.qml</file> -->
+        <!-- <file>EventEditorWindow.qml</file> -->
         <file>ListWindow.qml</file>
         <file>NoteWindow.qml</file>
         <file>SettingsWindow.qml</file>

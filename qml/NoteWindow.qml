@@ -25,6 +25,10 @@ Item {
     property real dragPointerY: 0
     property real dragGrabOffsetY: 0
     property int draggingIndex: -1
+    property bool summaryMenuOpen: false
+    property bool summaryMenuHovered: false
+    property bool summaryTemplateDialogOpen: false
+    property string summaryTemplateDraft: ""
     readonly property int rowDragStep: 36
 
     function priorityColor(priority) {
@@ -76,6 +80,23 @@ Item {
         dragGrabOffsetY = 0
     }
 
+    function clampTodoContentY(contentY) {
+        if (!todoList) {
+            return 0
+        }
+        return Math.max(0, Math.min(todoList.contentHeight - todoList.height, contentY))
+    }
+
+    function restoreTodoContentY(contentY, retries) {
+        Qt.callLater(function() {
+            todoList.forceLayout()
+            todoList.contentY = clampTodoContentY(contentY)
+            if (retries > 0) {
+                restoreTodoContentY(contentY, retries - 1)
+            }
+        })
+    }
+
     function indexOfTodo(todoId) {
         for (var i = 0; i < noteController.todos.length; ++i) {
             if (noteController.todos[i]["id"] === todoId) {
@@ -122,69 +143,75 @@ Item {
         schedulePendingFocusReveal()
     }
 
+    function openSummaryTemplateDialog() {
+        summaryMenuOpen = false
+        summaryMenuHovered = false
+        summaryTemplateDraft = noteController.summaryTemplate
+        summaryTemplateDialogOpen = true
+        Qt.callLater(function() {
+            centerSummaryTemplateWindow()
+            summaryTemplateWindow.raise()
+            summaryTemplateWindow.requestActivate()
+            summaryTemplateEdit.forceActiveFocus()
+            summaryTemplateEdit.cursorPosition = summaryTemplateEdit.length
+        })
+    }
+
+    function centerSummaryTemplateWindow() {
+        summaryTemplateWindow.x = Math.round((Screen.width - summaryTemplateWindow.width) / 2)
+        summaryTemplateWindow.y = Math.round((Screen.height - summaryTemplateWindow.height) / 2)
+    }
+
+    function showSummaryMenu() {
+        summaryMenuHideTimer.stop()
+        summaryMenuOpen = true
+    }
+
+    function requestSummaryMenuHide() {
+        summaryMenuHideTimer.restart()
+    }
+
+    Timer {
+        id: summaryMenuHideTimer
+        interval: 180
+        repeat: false
+        onTriggered: {
+            if (!summaryButton.hovered && !root.summaryMenuHovered) {
+                root.summaryMenuOpen = false
+            }
+        }
+    }
+
     component HeaderButton: Item {
         id: buttonRoot
-        width: 32
+        width: 28
         height: 32
 
         signal clicked()
         property string kind: "plus"
-        property color normalColor: Qt.rgba(1, 1, 1, 0.70)
-        property color hoverColor: "white"
-        property color iconColor: mouse.containsMouse ? hoverColor : normalColor
+        readonly property color hoverBackground: root.lightTheme ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.12)
+        readonly property bool hovered: mouse.containsMouse
+        readonly property string iconTone: root.lightTheme ? "dark" : "light"
 
-        Canvas {
-            id: iconCanvas
+        Rectangle {
             anchors.centerIn: parent
-            width: buttonRoot.kind === "ai" ? 12 : 16
-            height: buttonRoot.kind === "ai" ? 12 : 16
-            antialiasing: true
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-                ctx.strokeStyle = buttonRoot.iconColor
-                ctx.fillStyle = buttonRoot.iconColor
-                ctx.lineWidth = 1.5
-                ctx.lineCap = "round"
-                ctx.lineJoin = "round"
-                if (buttonRoot.kind === "plus") {
-                    ctx.beginPath()
-                    ctx.moveTo(width / 2, 2.5)
-                    ctx.lineTo(width / 2, height - 2.5)
-                    ctx.moveTo(2.5, height / 2)
-                    ctx.lineTo(width - 2.5, height / 2)
-                    ctx.stroke()
-                } else if (buttonRoot.kind === "close") {
-                    ctx.beginPath()
-                    ctx.moveTo(3, 3)
-                    ctx.lineTo(width - 3, height - 3)
-                    ctx.moveTo(width - 3, 3)
-                    ctx.lineTo(3, height - 3)
-                    ctx.stroke()
-                } else {
-                    ctx.beginPath()
-                    ctx.moveTo(5.8, 9.6)
-                    ctx.lineTo(9.6, 5.8)
-                    ctx.lineTo(11.2, 7.3)
-                    ctx.lineTo(7.4, 11.2)
-                    ctx.closePath()
-                    ctx.stroke()
-                    ctx.beginPath()
-                    ctx.moveTo(9.2, 6.5)
-                    ctx.lineTo(8.2, 1.8)
-                    ctx.lineTo(1.3, 1.3)
-                    ctx.lineTo(3.0, 8.6)
-                    ctx.lineTo(6.5, 9.2)
-                    ctx.stroke()
-                    ctx.beginPath()
-                    ctx.moveTo(1.4, 1.4)
-                    ctx.lineTo(5.2, 5.2)
-                    ctx.stroke()
-                    ctx.beginPath()
-                    ctx.arc(10.6, 2.4, 1.1, 0, Math.PI * 2)
-                    ctx.fill()
-                }
-            }
+            width: 24
+            height: 24
+            radius: 5
+            color: buttonRoot.hovered ? buttonRoot.hoverBackground : "transparent"
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+
+        Image {
+            anchors.centerIn: parent
+            width: 16
+            height: 16
+            source: "qrc:/assets/header-" + buttonRoot.kind + "-" + buttonRoot.iconTone + ".svg"
+            sourceSize.width: 16
+            sourceSize.height: 16
+            smooth: true
+            opacity: buttonRoot.hovered ? 1 : 0.72
+            Behavior on opacity { NumberAnimation { duration: 120 } }
         }
 
         MouseArea {
@@ -194,14 +221,76 @@ Item {
             cursorShape: Qt.PointingHandCursor
             onClicked: buttonRoot.clicked()
         }
+    }
 
-        onIconColorChanged: iconCanvas.requestPaint()
+    component SummaryMenuItem: Rectangle {
+        id: menuItemRoot
+        width: parent ? parent.width : 152
+        height: 34
+        radius: 5
+        color: menuMouse.containsMouse
+               ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.10))
+               : "transparent"
+
+        signal clicked()
+        property string label: ""
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            text: menuItemRoot.label
+            color: root.textColor
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: menuMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: menuItemRoot.clicked()
+        }
+    }
+
+    component DialogButton: Rectangle {
+        id: dialogButtonRoot
+        width: 72
+        height: 30
+        radius: 6
+
+        signal clicked()
+        property string label: ""
+        property bool primary: false
+        readonly property bool hovered: dialogButtonMouse.containsMouse
+
+        color: primary
+               ? (hovered ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.16))
+               : (hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10)) : "transparent")
+        border.width: primary ? 0 : 1
+        border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.14)
+
+        Text {
+            anchors.centerIn: parent
+            text: dialogButtonRoot.label
+            color: dialogButtonRoot.primary ? "white" : root.textColor
+            font.pixelSize: 12
+        }
+
+        MouseArea {
+            id: dialogButtonMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: dialogButtonRoot.clicked()
+        }
     }
 
     Rectangle {
         id: card
         anchors.fill: parent
         radius: 12
+        antialiasing: true
         color: root.cardColor
         clip: true
         border.width: 1
@@ -248,21 +337,22 @@ Item {
                 Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }
 
                 HeaderButton {
+                    id: summaryButton
                     kind: "ai"
-                    normalColor: root.lightTheme ? Qt.rgba(0, 0, 0, 0.60) : Qt.rgba(1, 1, 1, 0.70)
-                    hoverColor: "#9c27b0"
-                    onClicked: toast.show(noteController.summarizeToday())
+                    onHoveredChanged: {
+                        if (hovered) {
+                            root.showSummaryMenu()
+                        } else {
+                            root.requestSummaryMenuHide()
+                        }
+                    }
                 }
                 HeaderButton {
                     kind: "plus"
-                    normalColor: root.lightTheme ? Qt.rgba(0, 0, 0, 0.60) : Qt.rgba(1, 1, 1, 0.70)
-                    hoverColor: "#28c840"
                     onClicked: root.addTodo()
                 }
                 HeaderButton {
                     kind: "close"
-                    normalColor: root.lightTheme ? Qt.rgba(0, 0, 0, 0.60) : Qt.rgba(1, 1, 1, 0.70)
-                    hoverColor: "#ff5f57"
                     onClicked: {
                         toast.show("便签已隐藏")
                         hideTimer.restart()
@@ -455,10 +545,12 @@ Item {
                                     var todoId = row.appRoot.draggingTodoId
                                     var target = row.appRoot.dragTargetIndex
                                     var start = row.appRoot.dragStartIndex
+                                    var releaseContentY = todoList.contentY
                                     row.appRoot.resetDragState()
                                     todoList.interactive = true
                                     if (todoId.length > 0 && target >= 0 && target !== start) {
                                         noteController.moveTodoById(todoId, target)
+                                        row.appRoot.restoreTodoContentY(releaseContentY, 3)
                                     }
                                 }
                                 onCanceled: {
@@ -714,6 +806,57 @@ Item {
         }
 
         Rectangle {
+            id: summaryMenu
+            z: 90
+            visible: root.summaryMenuOpen || summaryButton.hovered || root.summaryMenuHovered
+            x: Math.max(8, Math.min(parent.width - width - 8, parent.width - 154))
+            y: 38
+            width: 152
+            height: 76
+            radius: 8
+            color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.98) : Qt.rgba(48 / 255, 48 / 255, 48 / 255, 0.98)
+            border.width: 1
+            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.12)
+
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                onContainsMouseChanged: {
+                    root.summaryMenuHovered = containsMouse
+                    if (containsMouse) {
+                        root.showSummaryMenu()
+                    } else {
+                        root.requestSummaryMenuHide()
+                    }
+                }
+            }
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 4
+                spacing: 0
+
+                SummaryMenuItem {
+                    label: "总结本窗口内容"
+                    onClicked: {
+                        root.summaryMenuOpen = false
+                        root.summaryMenuHovered = false
+                        toast.show(noteController.summarizeToday())
+                    }
+                }
+
+                SummaryMenuItem {
+                    label: "调整总结模板"
+                    onClicked: {
+                        root.summaryMenuOpen = false
+                        root.summaryMenuHovered = false
+                        root.openSummaryTemplateDialog()
+                    }
+                }
+            }
+        }
+
+        Rectangle {
             id: resizeHandle
             width: 20
             height: 20
@@ -723,22 +866,22 @@ Item {
             Canvas {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.rightMargin: 3
-                anchors.bottomMargin: 3
-                width: 11
-                height: 11
+                anchors.rightMargin: 2
+                anchors.bottomMargin: 2
+                width: 16
+                height: 16
                 onPaint: {
                     var ctx = getContext("2d")
                     ctx.clearRect(0, 0, width, height)
                     ctx.strokeStyle = root.lightTheme ? Qt.rgba(0,0,0,0.3) : Qt.rgba(1,1,1,0.4)
-                    ctx.lineWidth = 2
+                    ctx.lineWidth = 1.6
                     ctx.lineCap = "round"
                     ctx.lineJoin = "round"
+
+                    var cx = 6
+                    var cy = 6
                     ctx.beginPath()
-                    ctx.moveTo(width - 1, 1)
-                    ctx.lineTo(width - 1, height - 5)
-                    ctx.quadraticCurveTo(width - 1, height - 1, width - 5, height - 1)
-                    ctx.lineTo(1, height - 1)
+                    ctx.arc(cx, cy, 5, 0, Math.PI / 2, false)
                     ctx.stroke()
                 }
             }
@@ -746,6 +889,183 @@ Item {
                 target: null
                 acceptedButtons: Qt.LeftButton
                 onActiveChanged: if (active && root.hostWindow) root.hostWindow.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
+            }
+        }
+    }
+
+    Window {
+        id: summaryTemplateWindow
+        width: 520
+        height: 430
+        minimumWidth: 460
+        minimumHeight: 360
+        visible: root.summaryTemplateDialogOpen
+        title: "调整总结模板"
+        modality: Qt.NonModal
+        flags: Qt.Window | Qt.FramelessWindowHint
+        color: "transparent"
+        property real dragStartScreenX: 0
+        property real dragStartScreenY: 0
+        property real dragStartWindowX: 0
+        property real dragStartWindowY: 0
+        onVisibleChanged: {
+            if (visible) {
+                root.centerSummaryTemplateWindow()
+            }
+        }
+        onClosing: function(close) {
+            close.accepted = false
+            root.summaryTemplateDialogOpen = false
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 12
+            antialiasing: true
+            color: root.lightTheme ? "#f4f4f4" : "#2f2f2f"
+            clip: true
+            border.width: 1
+            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(1, 1, 1, 0.14)
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 14
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.SizeAllCursor
+                        acceptedButtons: Qt.LeftButton
+                        onPressed: function(mouse) {
+                            var globalPos = mapToGlobal(mouse.x, mouse.y)
+                            summaryTemplateWindow.dragStartScreenX = globalPos.x
+                            summaryTemplateWindow.dragStartScreenY = globalPos.y
+                            summaryTemplateWindow.dragStartWindowX = summaryTemplateWindow.x
+                            summaryTemplateWindow.dragStartWindowY = summaryTemplateWindow.y
+                            mouse.accepted = true
+                        }
+                        onPositionChanged: function(mouse) {
+                            if (!pressed) {
+                                return
+                            }
+                            var globalPos = mapToGlobal(mouse.x, mouse.y)
+                            summaryTemplateWindow.x = Math.round(summaryTemplateWindow.dragStartWindowX + globalPos.x - summaryTemplateWindow.dragStartScreenX)
+                            summaryTemplateWindow.y = Math.round(summaryTemplateWindow.dragStartWindowY + globalPos.y - summaryTemplateWindow.dragStartScreenY)
+                            mouse.accepted = true
+                        }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        spacing: 10
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "调整总结模板"
+                            color: root.textColor
+                            font.pixelSize: 18
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 30
+                            Layout.preferredHeight: 30
+                            radius: 6
+                            color: closeTemplateMouse.containsMouse
+                                   ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10))
+                                   : "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                color: root.mutedColor
+                                font.pixelSize: 22
+                            }
+
+                            MouseArea {
+                                id: closeTemplateMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.summaryTemplateDialogOpen = false
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "用于“总结本窗口内容”的提示词"
+                    color: root.mutedColor
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
+
+                TextArea {
+                    id: summaryTemplateEdit
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    text: root.summaryTemplateDraft
+                    color: root.textColor
+                    placeholderText: "请输入总结提示词"
+                    placeholderTextColor: root.mutedColor
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    font.pixelSize: 14
+                    leftPadding: 14
+                    rightPadding: 14
+                    topPadding: 14
+                    bottomPadding: 14
+                    background: Rectangle {
+                        radius: 8
+                        color: root.lightTheme ? "#ffffff" : "#3b3b3b"
+                        border.width: 1
+                        border.color: summaryTemplateEdit.activeFocus
+                                      ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.24) : Qt.rgba(1, 1, 1, 0.24))
+                                      : (root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.12))
+                    }
+                    onTextChanged: root.summaryTemplateDraft = text
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    spacing: 10
+
+                    DialogButton {
+                        label: "恢复默认"
+                        width: 86
+                        height: 34
+                        onClicked: {
+                            noteController.resetSummaryTemplate()
+                            root.summaryTemplateDraft = noteController.summaryTemplate
+                        }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    DialogButton {
+                        label: "取消"
+                        height: 34
+                        onClicked: root.summaryTemplateDialogOpen = false
+                    }
+
+                    DialogButton {
+                        label: "保存"
+                        height: 34
+                        primary: true
+                        onClicked: {
+                            noteController.summaryTemplate = root.summaryTemplateDraft
+                            root.summaryTemplateDialogOpen = false
+                            toast.show("总结模板已保存")
+                        }
+                    }
+                }
             }
         }
     }

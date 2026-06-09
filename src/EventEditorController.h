@@ -1,3 +1,6 @@
+/*
+Calendar/event editor is parked for the current version.
+
 #pragma once
 
 #include <QObject>
@@ -50,3 +53,4 @@ private:
     TodoApp *m_app = nullptr;
     QVariantMap m_event;
 };
+*/

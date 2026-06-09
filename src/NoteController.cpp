@@ -68,9 +68,21 @@ int NoteController::totalCount() const
     return todosArray().size();
 }
 
+QString NoteController::summaryTemplate() const
+{
+    return m_app->noteSummaryTemplate();
+}
+
+void NoteController::setSummaryTemplate(const QString &summaryTemplate)
+{
+    m_app->setNoteSummaryTemplate(summaryTemplate);
+    emit summaryTemplateChanged();
+}
+
 void NoteController::refresh()
 {
     emit noteChanged();
+    emit summaryTemplateChanged();
 }
 
 QString NoteController::addTodo(int afterIndex)
@@ -226,6 +238,12 @@ void NoteController::hide()
 QString NoteController::summarizeToday()
 {
     return m_app->summarizeNote(m_noteId);
+}
+
+void NoteController::resetSummaryTemplate()
+{
+    m_app->setNoteSummaryTemplate(QString());
+    emit summaryTemplateChanged();
 }
 
 QJsonObject NoteController::note() const

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=小U待办
+Comment=Deepin/UOS todo notes
+Exec=todo260606
+Icon=todo260606
+Terminal=false
+Categories=Utility;
+StartupNotify=true
