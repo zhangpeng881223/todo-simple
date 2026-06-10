@@ -48,7 +48,7 @@ public:
     void updateNoteTodos(const QString &noteId, const QJsonArray &todos);
     QJsonArray sortedTodosForDisplay(const QJsonArray &todos) const;
 
-    Q_INVOKABLE void createNewNote();
+    Q_INVOKABLE QString createNewNote();
     Q_INVOKABLE void openNote(const QString &noteId);
     Q_INVOKABLE void hideNote(const QString &noteId);
     Q_INVOKABLE void deleteNote(const QString &noteId);

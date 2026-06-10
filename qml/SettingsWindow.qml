@@ -21,6 +21,7 @@ Item {
     readonly property color controlBase: lightTheme ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.08)
     readonly property color controlBorder: lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.15)
     readonly property color controlText: lightTheme ? "#303030" : "#f4f4f4"
+    property string syncedTheme: ""
 
     function notify(message) {
         var text = String(message || "")
@@ -38,11 +39,20 @@ Item {
         }
     }
 
-    Component.onCompleted: syncDtkPalette()
+    Component.onCompleted: {
+        syncedTheme = app.theme
+        syncDtkPalette()
+    }
 
     Connections {
         target: app
-        function onSettingsChanged() { root.syncDtkPalette() }
+        function onSettingsChanged() {
+            if (root.syncedTheme === app.theme) {
+                return
+            }
+            root.syncedTheme = app.theme
+            root.syncDtkPalette()
+        }
     }
 
     Rectangle {
@@ -391,8 +401,8 @@ Item {
                         hoverEnabled: true
                         onClicked: {
                             combo.currentIndex = index
-                            combo.activated(index)
                             comboPopup.close()
+                            combo.activated(index)
                         }
 
                         contentItem: Text {

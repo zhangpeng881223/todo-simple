@@ -12,7 +12,7 @@ Item {
     readonly property var hostWindow: Window.window
     readonly property bool lightTheme: app.noteTheme === "light"
     readonly property real bgOpacity: Math.max(0, Math.min(100, app.opacity)) / 100
-    readonly property color cardColor: lightTheme ? Qt.rgba(240 / 255, 240 / 255, 240 / 255, 1) : Qt.rgba(40 / 255, 40 / 255, 40 / 255, bgOpacity)
+    readonly property color cardColor: lightTheme ? Qt.rgba(240 / 255, 240 / 255, 240 / 255, bgOpacity) : Qt.rgba(40 / 255, 40 / 255, 40 / 255, bgOpacity)
     readonly property color textColor: lightTheme ? "#333333" : "white"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(1, 1, 1, 0.42)
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.30) : Qt.rgba(1, 1, 1, 0.30)
@@ -24,6 +24,23 @@ Item {
     property int dragTargetIndex: -1
     property real dragPointerY: 0
     property real dragGrabOffsetY: 0
+
+    function displayTitle(title) {
+        var text = String(title || "便签标题")
+        var width = 0
+        var result = ""
+        for (var i = 0; i < text.length; ++i) {
+            var code = text.charCodeAt(i)
+            var charWidth = code <= 0x007f ? 1 : 2
+            if (width + charWidth > 16) {
+                return result + "..."
+            }
+            result += text.charAt(i)
+            width += charWidth
+        }
+        return text
+    }
+
     property int draggingIndex: -1
     property bool summaryMenuOpen: false
     property bool summaryMenuHovered: false
@@ -317,9 +334,10 @@ Item {
                 TextField {
                     id: titleEdit
                     Layout.minimumWidth: 60
-                    Layout.maximumWidth: 150
-                    Layout.preferredWidth: Math.min(150, Math.max(60, implicitWidth + 4))
-                    text: noteController.title
+                    Layout.maximumWidth: 230
+                    Layout.preferredWidth: Math.min(230, Math.max(60, titleMetrics.width + 8))
+                    property string editDraft: noteController.title
+                    text: activeFocus ? editDraft : root.displayTitle(noteController.title)
                     color: root.textColor
                     placeholderText: "便签标题"
                     placeholderTextColor: root.mutedColor
@@ -330,8 +348,44 @@ Item {
                     rightPadding: 0
                     topPadding: 0
                     bottomPadding: 0
+                    horizontalAlignment: TextInput.AlignLeft
                     background: Item {}
-                    onEditingFinished: noteController.title = text
+                    Component.onCompleted: {
+                        focus = false
+                        cursorPosition = 0
+                    }
+                    onTextEdited: if (activeFocus) editDraft = text
+                    onActiveFocusChanged: {
+                        if (activeFocus) {
+                            editDraft = noteController.title
+                            cursorPosition = length
+                        } else {
+                            if (editDraft !== noteController.title) {
+                                noteController.title = editDraft
+                            }
+                            cursorPosition = 0
+                        }
+                    }
+                    onEditingFinished: {
+                        if (activeFocus && editDraft !== noteController.title) {
+                            noteController.title = editDraft
+                        }
+                    }
+
+                    Connections {
+                        target: noteController
+                        function onNoteChanged() {
+                            if (!titleEdit.activeFocus) {
+                                titleEdit.cursorPosition = 0
+                            }
+                        }
+                    }
+
+                    TextMetrics {
+                        id: titleMetrics
+                        font: titleEdit.font
+                        text: titleEdit.activeFocus ? titleEdit.editDraft : root.displayTitle(noteController.title)
+                    }
                 }
 
                 Item { Layout.fillWidth: true; Layout.minimumWidth: 8 }

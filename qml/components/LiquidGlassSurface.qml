@@ -139,14 +139,14 @@ Rectangle {
 
             var bottom = ctx.createLinearGradient(0, h * 0.62, 0, h)
             bottom.addColorStop(0.0, "rgba(255,255,255,0)")
-            bottom.addColorStop(0.72, "rgba(215,255,230," + (surface.lightTheme ? (surface.windowMode ? 0.010 : (panel ? 0.025 : 0.040)) + 0.020 * d : 0.02) + ")")
-            bottom.addColorStop(1.0, "rgba(0,0,0," + (surface.lightTheme ? (surface.windowMode ? 0.006 : (panel ? 0.012 : 0.024)) + 0.010 * d : 0.10) + ")")
+            bottom.addColorStop(0.72, "rgba(215,255,230," + (surface.lightTheme ? (surface.windowMode ? 0.010 : (panel ? 0.025 : 0.040)) + 0.020 * d : (surface.windowMode ? 0.002 : 0.02)) + ")")
+            bottom.addColorStop(1.0, "rgba(0,0,0," + (surface.lightTheme ? (surface.windowMode ? 0.006 : (panel ? 0.012 : 0.024)) + 0.010 * d : (surface.windowMode ? 0.006 : 0.10)) + ")")
             ctx.fillStyle = bottom
             roundedPath(ctx, 1, 1, w - 2, h - 2, surface.radius - 1)
             ctx.fill()
 
-            strokeRounded(ctx, 0.70, surface.lightTheme ? (surface.frostedMode ? 0.42 : (surface.windowMode ? 0.46 : (panel ? 0.70 : 0.78))) : 0.12, "rgba(255,255,255,1)", 1.0)
-            strokeRounded(ctx, 1.70, surface.lightTheme ? (surface.frostedMode ? 0.028 : (panel ? 0.030 : 0.040) + 0.018 * hp) : 0.12, "rgba(0,0,0,1)", 1.0)
+            strokeRounded(ctx, 0.70, surface.lightTheme ? (surface.frostedMode ? 0.42 : (surface.windowMode ? 0.46 : (panel ? 0.70 : 0.78))) : (surface.windowMode ? 0.030 : 0.12), "rgba(255,255,255,1)", 1.0)
+            strokeRounded(ctx, 1.70, surface.lightTheme ? (surface.frostedMode ? 0.028 : (panel ? 0.030 : 0.040) + 0.018 * hp) : (surface.windowMode ? 0.030 : 0.12), "rgba(0,0,0,1)", 1.0)
             if (!surface.frostedMode) {
                 strokeRounded(ctx, 3.0, surface.lightTheme ? surface.chromaOpacity + 0.040 * hp : 0.06, "rgba(120,205,255,1)", panel ? 0.65 : 0.85)
             }

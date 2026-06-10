@@ -546,10 +546,10 @@ void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int
     updateNoteTodos(noteId, next);
 }
 
-void TodoApp::createNewNote()
+QString TodoApp::createNewNote()
 {
     if (m_notes.size() >= MaxNotes) {
-        return;
+        return {};
     }
 
     const QString id = QString::number(QDateTime::currentMSecsSinceEpoch());
@@ -567,6 +567,7 @@ void TodoApp::createNewNote()
     saveNotes();
     emit notesChanged();
     openNote(id);
+    return id;
 }
 
 void TodoApp::openNote(const QString &noteId)
@@ -772,7 +773,9 @@ void TodoApp::updateSetting(const QString &key, const QVariant &value)
 {
     m_settings.insert(key, QJsonValue::fromVariant(value));
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
-    syncDtkPalette();
+    if (key == QStringLiteral("theme")) {
+        syncDtkPalette();
+    }
     saveSettings();
     emit settingsChanged();
 }
