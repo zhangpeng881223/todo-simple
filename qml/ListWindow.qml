@@ -25,8 +25,8 @@ D.ApplicationWindow {
     readonly property bool lightTheme: app.theme === "light"
                                        || (app.theme === "system"
                                            && D.ApplicationHelper.themeType === D.ApplicationHelper.LightType)
-    readonly property color windowColor: lightTheme ? Qt.rgba(222 / 255, 236 / 255, 1, 0.78) : Qt.rgba(36 / 255, 37 / 255, 38 / 255, 0.73)
-    readonly property color titlebarColor: lightTheme ? Qt.rgba(222 / 255, 236 / 255, 1, 0.78) : Qt.rgba(24 / 255, 25 / 255, 26 / 255, 0.67)
+    readonly property color windowColor: lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.36) : Qt.rgba(24 / 255, 25 / 255, 26 / 255, 0.34)
+    readonly property color titlebarColor: windowColor
     readonly property color sidebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.54) : "#222324"
     readonly property color sidebarGlassBlend: lightTheme ? Qt.rgba(1, 1, 1, 0.52) : "#222324"
     readonly property color sidebarGlassTop: lightTheme ? Qt.rgba(1, 1, 1, 0.74) : "#222324"
@@ -397,14 +397,14 @@ D.ApplicationWindow {
             radius: root.lightTheme ? 12 : 0
             variant: "window"
             lightTheme: root.lightTheme
-            density: root.lightTheme ? 0.24 : 0.18
-            tintOpacity: root.lightTheme ? 0.70 : 0.15
-            edgeOpacity: root.lightTheme ? 0.52 : 0.14
-            highlightOpacity: root.lightTheme ? 0.34 : 0.10
-            lensOpacity: root.lightTheme ? 0.13 : 0.05
-            chromaOpacity: root.lightTheme ? 0.018 : 0.010
-            blendColor: root.lightTheme ? Qt.rgba(222 / 255, 236 / 255, 1, 0.66) : Qt.rgba(0.09, 0.10, 0.11, 0.57)
-            tintColor: root.lightTheme ? Qt.rgba(222 / 255, 236 / 255, 1, 0.72) : Qt.rgba(0.09, 0.10, 0.11, 0.61)
+            density: root.lightTheme ? 0.18 : 0.20
+            tintOpacity: root.lightTheme ? 0.30 : 0.32
+            edgeOpacity: root.lightTheme ? 0.24 : 0.10
+            highlightOpacity: 0
+            lensOpacity: 0
+            chromaOpacity: 0
+            blendColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.28) : Qt.rgba(0.08, 0.09, 0.10, 0.28)
+            tintColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.30) : Qt.rgba(0.08, 0.09, 0.10, 0.32)
         }
 
         RowLayout {

@@ -10,8 +10,8 @@ Rectangle {
     property bool hovered: false
     property bool active: false
     property bool pressed: false
-    property real density: variant === "window" ? 0.26 : (variant === "frosted" ? 0.22 : (variant === "panel" ? 0.34 : 0.68))
-    property real tintOpacity: lightTheme ? 0.34 : 0.18
+    property real density: variant === "window" ? 0.18 : (variant === "frosted" ? 0.22 : (variant === "panel" ? 0.34 : 0.68))
+    property real tintOpacity: lightTheme ? (variant === "window" ? 0.30 : 0.34) : (variant === "window" ? 0.46 : 0.18)
     property real edgeOpacity: lightTheme ? 0.48 : 0.18
     property real highlightOpacity: lightTheme ? 0.46 : 0.16
     property real glowOpacity: active ? 0.30 : (hovered ? 0.20 : 0.08)
@@ -63,6 +63,15 @@ Rectangle {
         anchors.fill: parent
         radius: surface.radius
         antialiasing: true
+        visible: surface.windowMode
+        color: surface.tintColor
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: surface.radius
+        antialiasing: true
+        visible: !surface.windowMode
         gradient: Gradient {
             orientation: Gradient.Vertical
             GradientStop {
@@ -334,11 +343,14 @@ Rectangle {
         anchors.fill: parent
         radius: surface.radius
         color: "transparent"
-        border.width: surface.windowMode ? 0 : 1
+        border.width: 1
         border.color: surface.lightTheme
-                      ? (surface.frostedMode ? Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.34))
-                                             : Qt.rgba(1, 1, 1, surface.edgeOpacity))
-                      : Qt.rgba(1, 1, 1, Math.max(0.08, surface.edgeOpacity))
+                      ? (surface.windowMode
+                         ? Qt.rgba(1, 1, 1, 0.24)
+                         : (surface.frostedMode ? Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.34))
+                                                : Qt.rgba(1, 1, 1, surface.edgeOpacity)))
+                      : (surface.windowMode ? Qt.rgba(1, 1, 1, 0.10)
+                                            : Qt.rgba(1, 1, 1, Math.max(0.08, surface.edgeOpacity)))
         antialiasing: true
     }
 
