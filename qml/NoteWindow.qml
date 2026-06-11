@@ -24,6 +24,12 @@ Item {
     property int dragTargetIndex: -1
     property real dragPointerY: 0
     property real dragGrabOffsetY: 0
+    property bool dragSettling: false
+    property string pendingDragTodoId: ""
+    property int pendingDragStartIndex: -1
+    property int pendingDragTargetIndex: -1
+    property real pendingDragContentY: 0
+    property bool committingTodoMove: false
 
     function displayTitle(title) {
         var text = String(title || "便签标题")
@@ -69,8 +75,8 @@ Item {
 
     function unfinishedTodoCount() {
         var count = 0
-        for (var i = 0; i < noteController.todos.length; ++i) {
-            if (!noteController.todos[i]["completed"]) {
+        for (var i = 0; i < noteTodosModel.count; ++i) {
+            if (!noteTodosModel.get(i).completed) {
                 ++count
             }
         }
@@ -95,6 +101,60 @@ Item {
         dragTargetIndex = -1
         dragPointerY = 0
         dragGrabOffsetY = 0
+        dragSettling = false
+    }
+
+    function clearPendingDragCommit() {
+        pendingDragTodoId = ""
+        pendingDragStartIndex = -1
+        pendingDragTargetIndex = -1
+        pendingDragContentY = 0
+    }
+
+    function queueTodoDragCommit(todoId, start, target, contentY) {
+        pendingDragTodoId = todoId
+        pendingDragStartIndex = start
+        pendingDragTargetIndex = target
+        pendingDragContentY = contentY
+        dragCommitTimer.restart()
+    }
+
+    function todoField(todo, fieldName, fallbackValue) {
+        if (!todo || todo[fieldName] === undefined || todo[fieldName] === null) {
+            return fallbackValue
+        }
+        return todo[fieldName]
+    }
+
+    function syncNoteTodos(force) {
+        var todos = noteController.todos || []
+        var sameShape = noteTodosModel.count === todos.length
+        if (sameShape) {
+            for (var i = 0; i < todos.length; ++i) {
+                if (noteTodosModel.get(i).id !== todoField(todos[i], "id", "")) {
+                    sameShape = false
+                    break
+                }
+            }
+        }
+        if (force || !sameShape) {
+            noteTodosModel.clear()
+            for (var appendIndex = 0; appendIndex < todos.length; ++appendIndex) {
+                noteTodosModel.append({
+                    "id": todoField(todos[appendIndex], "id", ""),
+                    "text": todoField(todos[appendIndex], "text", ""),
+                    "completed": !!todoField(todos[appendIndex], "completed", false),
+                    "priority": todoField(todos[appendIndex], "priority", "gray")
+                })
+            }
+            return
+        }
+        for (var updateIndex = 0; updateIndex < todos.length; ++updateIndex) {
+            var todo = todos[updateIndex]
+            noteTodosModel.setProperty(updateIndex, "text", todoField(todo, "text", ""))
+            noteTodosModel.setProperty(updateIndex, "completed", !!todoField(todo, "completed", false))
+            noteTodosModel.setProperty(updateIndex, "priority", todoField(todo, "priority", "gray"))
+        }
     }
 
     function clampTodoContentY(contentY) {
@@ -115,8 +175,8 @@ Item {
     }
 
     function indexOfTodo(todoId) {
-        for (var i = 0; i < noteController.todos.length; ++i) {
-            if (noteController.todos[i]["id"] === todoId) {
+        for (var i = 0; i < noteTodosModel.count; ++i) {
+            if (noteTodosModel.get(i).id === todoId) {
                 return i
             }
         }
@@ -186,6 +246,19 @@ Item {
 
     function requestSummaryMenuHide() {
         summaryMenuHideTimer.restart()
+    }
+
+    Component.onCompleted: syncNoteTodos(true)
+
+    Connections {
+        target: noteController
+        function onNoteChanged() {
+            root.syncNoteTodos(false)
+        }
+    }
+
+    ListModel {
+        id: noteTodosModel
     }
 
     Timer {
@@ -423,8 +496,12 @@ Item {
                 Layout.bottomMargin: 0
                 clip: true
                 spacing: 4
-                model: noteController.todos
+                model: noteTodosModel
                 boundsBehavior: Flickable.StopAtBounds
+                displaced: Transition {
+                    enabled: !root.committingTodoMove
+                    NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
+                }
 
                 delegate: Item {
                     id: row
@@ -433,14 +510,14 @@ Item {
                     z: isDraggingThis ? 60 : (priorityMenu.visible ? 20 : 1)
 
                     property bool confirmingDelete: false
-                    property string priority: modelData.priority || "gray"
-                    property bool done: !!modelData.completed
+                    property string priority: model.priority || "gray"
+                    property bool done: !!model.completed
                     property var appRoot: root
                     property int modelIndex: index
                     property bool menuVisible: priorityMouse.containsMouse || priorityMenu.hovered
-                    property bool activeRow: rowHover.hovered || menuVisible || confirmingDelete || appRoot.draggingTodoId === modelData.id
+                    property bool activeRow: rowHover.hovered || menuVisible || confirmingDelete || appRoot.draggingTodoId === model.id
                     readonly property bool hasPriorityStripe: app.priorityStyle !== "simple" && row.priority !== "gray" && row.priority !== "none"
-                    readonly property bool isDraggingThis: appRoot.draggingTodoId === modelData.id
+                    readonly property bool isDraggingThis: appRoot.draggingTodoId === model.id
                     property real dragPreviewOffset: {
                         if (appRoot.draggingTodoId.length === 0 || row.done) {
                             return 0
@@ -463,12 +540,12 @@ Item {
 
                     transform: Translate { y: row.dragPreviewOffset }
                     Behavior on dragPreviewOffset {
-                        enabled: !row.isDraggingThis
+                        enabled: !appRoot.committingTodoMove && (!row.isDraggingThis || appRoot.dragSettling)
                         NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
                     }
 
                     function focusIfPending() {
-                        if (modelData.id === appRoot.pendingFocusId) {
+                        if (model.id === appRoot.pendingFocusId) {
                             Qt.callLater(function() {
                                 todoEdit.forceActiveFocus()
                                 todoEdit.selectAll()
@@ -579,7 +656,7 @@ Item {
                                     mouse.accepted = true
                                     todoList.interactive = false
                                     var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                    row.appRoot.draggingTodoId = modelData.id
+                                    row.appRoot.draggingTodoId = model.id
                                     row.appRoot.dragStartIndex = index
                                     row.appRoot.dragTargetIndex = index
                                     row.appRoot.draggingIndex = index
@@ -600,14 +677,18 @@ Item {
                                     var target = row.appRoot.dragTargetIndex
                                     var start = row.appRoot.dragStartIndex
                                     var releaseContentY = todoList.contentY
-                                    row.appRoot.resetDragState()
-                                    todoList.interactive = true
                                     if (todoId.length > 0 && target >= 0 && target !== start) {
-                                        noteController.moveTodoById(todoId, target)
-                                        row.appRoot.restoreTodoContentY(releaseContentY, 3)
+                                        row.appRoot.dragSettling = true
+                                        row.appRoot.dragPointerY = row.y + (target - start) * row.appRoot.rowDragStep + row.appRoot.dragGrabOffsetY
+                                        row.appRoot.queueTodoDragCommit(todoId, start, target, releaseContentY)
+                                    } else {
+                                        row.appRoot.resetDragState()
+                                        todoList.interactive = true
                                     }
                                 }
                                 onCanceled: {
+                                    dragCommitTimer.stop()
+                                    row.appRoot.clearPendingDragCommit()
                                     row.appRoot.resetDragState()
                                     todoList.interactive = true
                                 }
@@ -646,7 +727,7 @@ Item {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 24
                             property bool removedByEditor: false
-                            text: modelData.text || ""
+                            text: model.text || ""
                             placeholderText: "新待办"
                             placeholderTextColor: root.mutedColor
                             selectByMouse: true
@@ -1136,6 +1217,36 @@ Item {
         id: hideTimer
         interval: 300
         onTriggered: noteController.hide()
+    }
+
+    Timer {
+        id: dragCommitTimer
+        interval: 120
+        repeat: false
+        onTriggered: {
+            var todoId = root.pendingDragTodoId
+            var start = root.pendingDragStartIndex
+            var target = root.pendingDragTargetIndex
+            var contentY = root.pendingDragContentY
+            var shouldMove = todoId.length > 0 && target >= 0
+            if (shouldMove) {
+                root.committingTodoMove = true
+                if (start >= 0 && start < noteTodosModel.count && target >= 0 && target < noteTodosModel.count && start !== target) {
+                    noteTodosModel.move(start, target, 1)
+                }
+                noteController.moveTodoById(todoId, target)
+            }
+            root.resetDragState()
+            root.clearPendingDragCommit()
+            todoList.interactive = true
+            if (shouldMove) {
+                root.restoreTodoContentY(contentY, 3)
+            }
+            Qt.callLater(function() {
+                root.committingTodoMove = false
+                root.syncNoteTodos(false)
+            })
+        }
     }
 
 }

@@ -13,6 +13,15 @@ int main(int argc, char *argv[])
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "dxcb:xcb");
     }
+    if (qEnvironmentVariableIsEmpty("QT_IM_MODULE")) {
+        qputenv("QT_IM_MODULE", "fcitx");
+    }
+    if (qEnvironmentVariableIsEmpty("XMODIFIERS")) {
+        qputenv("XMODIFIERS", "@im=fcitx");
+    }
+    if (qEnvironmentVariableIsEmpty("GTK_IM_MODULE")) {
+        qputenv("GTK_IM_MODULE", "fcitx");
+    }
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);

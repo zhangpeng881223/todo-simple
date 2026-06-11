@@ -59,6 +59,13 @@ D.ApplicationWindow {
     property int dragTargetIndex: -1
     property real dragGrabOffsetY: 0
     property int draggingIndex: -1
+    property bool dragSettling: false
+    property string pendingDragTodoId: ""
+    property string pendingDragNoteId: ""
+    property int pendingDragStartIndex: -1
+    property int pendingDragTargetIndex: -1
+    property real pendingDragContentY: 0
+    property bool committingTodoMove: false
     property bool applyingAppTheme: false
     readonly property real todoRowHeight: 35.2
     readonly property real todoRowSpacing: 4.4
@@ -204,12 +211,9 @@ D.ApplicationWindow {
     }
 
     function unfinishedTodoCount() {
-        var note = selectedNote()
-        if (!note) return 0
-        var todos = note.todos || []
         var count = 0
-        for (var i = 0; i < todos.length; ++i) {
-            if (!todos[i].completed) ++count
+        for (var i = 0; i < detailTodosModel.count; ++i) {
+            if (!detailTodosModel.get(i).completed) ++count
         }
         return count
     }
@@ -229,6 +233,62 @@ D.ApplicationWindow {
         dragStartIndex = -1
         dragTargetIndex = -1
         dragGrabOffsetY = 0
+        dragSettling = false
+    }
+
+    function clearPendingDragCommit() {
+        pendingDragTodoId = ""
+        pendingDragNoteId = ""
+        pendingDragStartIndex = -1
+        pendingDragTargetIndex = -1
+        pendingDragContentY = 0
+    }
+
+    function queueTodoDragCommit(noteId, todoId, start, target, contentY) {
+        pendingDragNoteId = noteId
+        pendingDragTodoId = todoId
+        pendingDragStartIndex = start
+        pendingDragTargetIndex = target
+        pendingDragContentY = contentY
+        dragCommitTimer.restart()
+    }
+
+    function todoField(todo, fieldName, fallbackValue) {
+        if (!todo || todo[fieldName] === undefined || todo[fieldName] === null)
+            return fallbackValue
+        return todo[fieldName]
+    }
+
+    function syncDetailTodos(force) {
+        var note = selectedNote()
+        var todos = note ? (note.todos || []) : []
+        var sameShape = detailTodosModel.count === todos.length
+        if (sameShape) {
+            for (var i = 0; i < todos.length; ++i) {
+                if (detailTodosModel.get(i).id !== todoField(todos[i], "id", "")) {
+                    sameShape = false
+                    break
+                }
+            }
+        }
+        if (force || !sameShape) {
+            detailTodosModel.clear()
+            for (var appendIndex = 0; appendIndex < todos.length; ++appendIndex) {
+                detailTodosModel.append({
+                    "id": todoField(todos[appendIndex], "id", ""),
+                    "text": todoField(todos[appendIndex], "text", ""),
+                    "completed": !!todoField(todos[appendIndex], "completed", false),
+                    "priority": todoField(todos[appendIndex], "priority", "gray")
+                })
+            }
+            return
+        }
+        for (var updateIndex = 0; updateIndex < todos.length; ++updateIndex) {
+            var todo = todos[updateIndex]
+            detailTodosModel.setProperty(updateIndex, "text", todoField(todo, "text", ""))
+            detailTodosModel.setProperty(updateIndex, "completed", !!todoField(todo, "completed", false))
+            detailTodosModel.setProperty(updateIndex, "priority", todoField(todo, "priority", "gray"))
+        }
     }
 
     function clampTodoContentY(contentY) {
@@ -263,12 +323,22 @@ D.ApplicationWindow {
     Component.onCompleted: {
         syncDtkPalette()
         ensureSelection()
+        syncDetailTodos(true)
     }
 
     Connections {
         target: app
         function onSettingsChanged() { root.syncDtkPalette() }
-        function onNotesChanged() { root.ensureSelection() }
+        function onNotesChanged() {
+            root.ensureSelection()
+            root.syncDetailTodos(false)
+        }
+    }
+
+    onSelectedNoteIdChanged: syncDetailTodos(true)
+
+    ListModel {
+        id: detailTodosModel
     }
 
     Connections {
@@ -432,6 +502,13 @@ D.ApplicationWindow {
                                     id: searchHover
                                 }
 
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.IBeamCursor
+                                    onClicked: searchInput.forceActiveFocus()
+                                }
+
                                 Image {
                                     id: searchIcon
                                     anchors.left: parent.left
@@ -458,7 +535,7 @@ D.ApplicationWindow {
                                     placeholderTextColor: root.weakColor
                                     color: root.textColor
                                     selectByMouse: true
-                                    font.pixelSize: 12
+                                    font.pixelSize: 13
                                     font.weight: Font.Medium
                                     background: Item {}
                                     onTextChanged: {
@@ -467,17 +544,6 @@ D.ApplicationWindow {
                                         root.searchTerm = text
                                         root.ensureSelection()
                                     }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.NoButton
-                                    cursorShape: Qt.IBeamCursor
-                                }
-
-                                TapHandler {
-                                    onTapped: searchInput.forceActiveFocus()
                                 }
                             }
 
@@ -774,6 +840,7 @@ D.ApplicationWindow {
                 Layout.fillHeight: true
 
                 property var note: root.selectedNote()
+                onNoteChanged: root.syncDetailTodos(false)
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -856,7 +923,7 @@ D.ApplicationWindow {
                                     label: "删除"
                                     danger: true
                                     iconSource: "qrc:/assets/toolbar-trash-" + root.iconTone + ".svg"
-                                    hoverIconSource: "qrc:/assets/toolbar-trash-accent.svg"
+                                    hoverIconSource: "qrc:/assets/toolbar-trash-danger.svg"
                                     onClicked: {
                                         if (!detailPane.note) return
                                         root.contextDeleteNoteId = detailPane.note.id
@@ -912,9 +979,10 @@ D.ApplicationWindow {
                             anchors.fill: parent
                             clip: true
                             spacing: root.todoRowSpacing
-                            model: detailPane.note ? (detailPane.note.todos || []) : []
+                            model: detailTodosModel
                             boundsBehavior: Flickable.StopAtBounds
                             displaced: Transition {
+                                enabled: !root.committingTodoMove
                                 NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
                             }
                             add: Transition {
@@ -935,13 +1003,13 @@ D.ApplicationWindow {
                                 scale: 1
 
                                 property bool confirmingDelete: false
-                                property string priority: modelData.priority || "gray"
-                                property bool done: !!modelData.completed
+                                property string priority: model.priority || "gray"
+                                property bool done: !!model.completed
                                 property real dragLiftOffset: 0
                                 property bool menuVisible: priorityMouse.containsMouse || priorityMenu.hovered
-                                property bool activeRow: rowHover.hovered || menuVisible || confirmingDelete || root.draggingTodoId === modelData.id
+                                property bool activeRow: rowHover.hovered || menuVisible || confirmingDelete || root.draggingTodoId === model.id
                                 readonly property bool hasPriorityStripe: app.priorityStyle !== "simple" && priority !== "gray" && priority !== "none"
-                                readonly property bool isDraggingThis: root.draggingTodoId === modelData.id
+                                readonly property bool isDraggingThis: root.draggingTodoId === model.id
                                 property real dragPreviewOffset: {
                                     if (root.draggingTodoId.length === 0 || todoRow.done) {
                                         return 0
@@ -960,7 +1028,7 @@ D.ApplicationWindow {
 
                                 transform: Translate { y: todoRow.dragPreviewOffset }
                                 Behavior on dragPreviewOffset {
-                                    enabled: !todoRow.isDraggingThis
+                                    enabled: !root.committingTodoMove && (!todoRow.isDraggingThis || root.dragSettling)
                                     NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
                                 }
 
@@ -1066,7 +1134,7 @@ D.ApplicationWindow {
                                                 mouse.accepted = true
                                                 todoList.interactive = false
                                                 var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                                root.draggingTodoId = modelData.id
+                                                root.draggingTodoId = model.id
                                                 root.dragStartIndex = index
                                                 root.dragTargetIndex = index
                                                 root.draggingIndex = index
@@ -1092,15 +1160,19 @@ D.ApplicationWindow {
                                                 var start = appRoot.dragStartIndex
                                                 var noteId = appRoot.selectedNoteId
                                                 var releaseContentY = todoList.contentY
-                                                todoRow.dragLiftOffset = 0
-                                                appRoot.resetDragState()
-                                                todoList.interactive = true
                                                 if (todoId.length > 0 && target >= 0 && target !== start) {
-                                                    app.moveNoteTodoById(noteId, todoId, target)
-                                                    appRoot.restoreTodoContentY(releaseContentY, 3)
+                                                    appRoot.dragSettling = true
+                                                    todoRow.dragLiftOffset = (target - start) * appRoot.rowDragStep
+                                                    appRoot.queueTodoDragCommit(noteId, todoId, start, target, releaseContentY)
+                                                } else {
+                                                    todoRow.dragLiftOffset = 0
+                                                    appRoot.resetDragState()
+                                                    todoList.interactive = true
                                                 }
                                             }
                                             onCanceled: {
+                                                dragCommitTimer.stop()
+                                                root.clearPendingDragCommit()
                                                 todoRow.dragLiftOffset = 0
                                                 root.resetDragState()
                                                 todoList.interactive = true
@@ -1131,7 +1203,7 @@ D.ApplicationWindow {
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: app.toggleNoteTodo(root.selectedNoteId, modelData.id)
+                                            onClicked: app.toggleNoteTodo(root.selectedNoteId, model.id)
                                         }
                                     }
 
@@ -1141,7 +1213,7 @@ D.ApplicationWindow {
 	                                        Layout.minimumWidth: 0
 	                                        Layout.preferredHeight: root.wrapTodos ? Math.max(24, contentHeight + 2) : 24
                                         implicitWidth: 0
-                                        text: modelData.text || ""
+                                        text: model.text || ""
                                         color: todoRow.done ? root.mutedColor : root.textColor
                                         placeholderText: "新待办"
                                         placeholderTextColor: root.mutedColor
@@ -1157,7 +1229,7 @@ D.ApplicationWindow {
                                         background: Item {}
                                         Keys.onReturnPressed: function(event) {
                                             if (!root.wrapTodos) {
-                                                app.commitNoteTodoText(root.selectedNoteId, modelData.id, text)
+                                                app.commitNoteTodoText(root.selectedNoteId, model.id, text)
                                                 addTodoInput.forceActiveFocus()
                                                 event.accepted = true
                                             }
@@ -1166,7 +1238,7 @@ D.ApplicationWindow {
                                             focus = false
                                             event.accepted = true
                                         }
-                                        onActiveFocusChanged: if (!activeFocus) app.commitNoteTodoText(root.selectedNoteId, modelData.id, text)
+                                        onActiveFocusChanged: if (!activeFocus) app.commitNoteTodoText(root.selectedNoteId, model.id, text)
                                     }
 
 	                                    Item {
@@ -1237,7 +1309,7 @@ D.ApplicationWindow {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
                                                     if (todoRow.confirmingDelete) {
-                                                        app.deleteNoteTodo(root.selectedNoteId, modelData.id)
+                                                        app.deleteNoteTodo(root.selectedNoteId, model.id)
                                                     } else {
                                                         todoRow.confirmingDelete = true
                                                         todoDeleteTimer.restart()
@@ -1255,7 +1327,7 @@ D.ApplicationWindow {
                                             lightTheme: root.lightTheme
                                             currentPriority: todoRow.priority
                                             onPrioritySelected: function(priority) {
-                                                app.setNoteTodoPriority(root.selectedNoteId, modelData.id, priority)
+                                                app.setNoteTodoPriority(root.selectedNoteId, model.id, priority)
                                             }
                                         }
 
@@ -1305,35 +1377,31 @@ D.ApplicationWindow {
 	                            id: addTodoHover
 	                        }
 
+	                        MouseArea {
+	                            anchors.fill: parent
+	                            hoverEnabled: true
+	                            cursorShape: Qt.IBeamCursor
+	                            onClicked: addTodoInput.forceActiveFocus()
+	                        }
+
 	                        QQC.TextField {
 	                            id: addTodoInput
 	                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
+	                            anchors.leftMargin: 12
+	                            anchors.rightMargin: 12
 	                            placeholderText: "添加一条待办..."
 	                            placeholderTextColor: root.weakColor
 	                            color: root.textColor
 	                            selectByMouse: true
-	                            font.pixelSize: 12
+	                            font.pixelSize: 13
 	                            font.weight: Font.Medium
-                            background: Item {}
-                            onAccepted: {
-                                if (detailPane.note && text.trim().length > 0) {
-                                    app.addTodoToNote(detailPane.note.id, text)
-                                    text = ""
-                                }
-                            }
-                        }
-
-	                        MouseArea {
-	                            anchors.fill: parent
-	                            hoverEnabled: true
-	                            acceptedButtons: Qt.NoButton
-	                            cursorShape: Qt.IBeamCursor
-	                        }
-
-	                        TapHandler {
-	                            onTapped: addTodoInput.forceActiveFocus()
+	                            background: Item {}
+	                            onAccepted: {
+	                                if (detailPane.note && text.trim().length > 0) {
+	                                    app.addTodoToNote(detailPane.note.id, text)
+	                                    text = ""
+	                                }
+	                            }
 	                        }
                     }
                 }
@@ -1376,6 +1444,37 @@ D.ApplicationWindow {
         id: confirmDeleteTimer
         interval: 1400
         onTriggered: root.confirmingNoteDelete = false
+    }
+
+    Timer {
+        id: dragCommitTimer
+        interval: 120
+        repeat: false
+        onTriggered: {
+            var noteId = root.pendingDragNoteId
+            var todoId = root.pendingDragTodoId
+            var start = root.pendingDragStartIndex
+            var target = root.pendingDragTargetIndex
+            var contentY = root.pendingDragContentY
+            var shouldMove = noteId.length > 0 && todoId.length > 0 && target >= 0
+            if (shouldMove) {
+                root.committingTodoMove = true
+                if (start >= 0 && start < detailTodosModel.count && target >= 0 && target < detailTodosModel.count && start !== target) {
+                    detailTodosModel.move(start, target, 1)
+                }
+                app.moveNoteTodoById(noteId, todoId, target)
+            }
+            root.resetDragState()
+            root.clearPendingDragCommit()
+            todoList.interactive = true
+            if (shouldMove) {
+                root.restoreTodoContentY(contentY, 3)
+            }
+            Qt.callLater(function() {
+                root.committingTodoMove = false
+                root.syncDetailTodos(false)
+            })
+        }
     }
 
     QQC.Popup {

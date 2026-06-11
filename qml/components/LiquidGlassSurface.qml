@@ -27,9 +27,10 @@ Rectangle {
     property real hoverProgress: hovered || active ? 1 : 0
     property real pressProgress: pressed ? 1 : 0
     property real shimmer: 0
-    readonly property real panelMode: variant === "panel" || variant === "frosted" || variant === "window" ? 1 : 0
     readonly property bool frostedMode: variant === "frosted"
     readonly property bool windowMode: variant === "window"
+    readonly property real panelMode: variant === "panel" || variant === "frosted" ? 1 : 0
+    readonly property bool opticsMode: !frostedMode && !windowMode
     readonly property real effectiveDensity: Math.min(1, Math.max(0, density + hoverProgress * 0.16 + pressProgress * 0.08))
 
     color: "transparent"
@@ -66,9 +67,11 @@ Rectangle {
             orientation: Gradient.Vertical
             GradientStop {
                 position: 0.0
-                color: surface.lightTheme
+                color: surface.windowMode
+                       ? surface.tintColor
+                       : (surface.lightTheme
                        ? Qt.rgba(1, 1, 1, surface.tintOpacity + (surface.panelMode ? (surface.frostedMode ? 0.02 : 0.06) : 0.12))
-                       : Qt.rgba(1, 1, 1, 0.08)
+                       : Qt.rgba(1, 1, 1, 0.08))
             }
             GradientStop {
                 position: 0.52
@@ -76,11 +79,13 @@ Rectangle {
             }
             GradientStop {
                 position: 1.0
-                color: surface.lightTheme
+                color: surface.windowMode
+                       ? surface.tintColor
+                       : (surface.lightTheme
                        ? (surface.frostedMode
                           ? Qt.rgba(1, 1, 1, Math.max(0.12, surface.tintOpacity - 0.10))
                           : Qt.rgba(236 / 255, 1, 242 / 255, Math.max(0.08, surface.tintOpacity - 0.20)))
-                       : Qt.rgba(1, 1, 1, 0.04)
+                       : Qt.rgba(1, 1, 1, 0.04))
             }
         }
     }
@@ -88,7 +93,7 @@ Rectangle {
     Canvas {
         id: opticsCanvas
         anchors.fill: parent
-        visible: !surface.frostedMode
+        visible: surface.opticsMode
         opacity: surface.highlightOpacity
         antialiasing: true
 
@@ -329,7 +334,7 @@ Rectangle {
         anchors.fill: parent
         radius: surface.radius
         color: "transparent"
-        border.width: 1
+        border.width: surface.windowMode ? 0 : 1
         border.color: surface.lightTheme
                       ? (surface.frostedMode ? Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.34))
                                              : Qt.rgba(1, 1, 1, surface.edgeOpacity))
@@ -342,7 +347,7 @@ Rectangle {
         anchors.margins: 1
         radius: Math.max(0, surface.radius - 1)
         color: "transparent"
-        border.width: surface.frostedMode ? 0 : 1
+        border.width: surface.frostedMode || surface.windowMode ? 0 : 1
         border.color: surface.lightTheme
                       ? Qt.rgba(0, 0, 0, surface.variant === "panel" ? 0.036 : 0.060 + surface.hoverProgress * 0.030)
                       : Qt.rgba(0, 0, 0, 0.14)
@@ -358,7 +363,7 @@ Rectangle {
         anchors.topMargin: 1
         height: 1
         radius: 1
-        opacity: surface.frostedMode ? 0 : (surface.lightTheme ? (surface.panelMode ? 0.32 : 0.58) : 0.10)
+        opacity: surface.frostedMode || surface.windowMode ? 0 : (surface.lightTheme ? (surface.panelMode ? 0.32 : 0.58) : 0.10)
         color: Qt.rgba(1, 1, 1, 0.90)
     }
 
@@ -366,7 +371,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: surface.frostedMode ? 0 : (surface.panelMode ? 12 : 5)
+        height: surface.frostedMode || surface.windowMode ? 0 : (surface.panelMode ? 12 : 5)
         radius: surface.radius
         color: surface.lightTheme
                ? Qt.rgba(0, 0, 0, surface.panelMode ? 0.018 : 0.030 + surface.hoverProgress * 0.018)
@@ -380,7 +385,7 @@ Rectangle {
         anchors.margins: rimInset
         radius: Math.max(0, surface.radius - rimInset)
         color: "transparent"
-        border.width: surface.hoverProgress > 0.01 || surface.active ? 1 : 0
+        border.width: surface.windowMode ? 0 : (surface.hoverProgress > 0.01 || surface.active ? 1 : 0)
         border.color: surface.active
                       ? Qt.rgba(46 / 255, 163 / 255, 1, 0.32)
                       : Qt.rgba(1, 1, 1, surface.glowOpacity)
