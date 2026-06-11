@@ -67,6 +67,7 @@ D.ApplicationWindow {
     property real pendingDragContentY: 0
     property bool committingTodoMove: false
     property bool applyingAppTheme: false
+    readonly property real noteListElasticSpan: 24
     readonly property real todoRowHeight: 35.2
     readonly property real todoRowSpacing: 4.4
     readonly property real rowDragStep: todoRowHeight + todoRowSpacing
@@ -386,7 +387,7 @@ D.ApplicationWindow {
         anchors.fill: parent
         radius: 0
         color: "transparent"
-        clip: false
+	                        clip: false
         focus: true
         antialiasing: true
 
@@ -452,7 +453,7 @@ D.ApplicationWindow {
                         radius: root.sidebarRadius
                         visible: root.sidebarLogoSize > 0
                         color: "transparent"
-                        clip: true
+	                            clip: false
                         antialiasing: true
                         z: 2
 
@@ -600,16 +601,79 @@ D.ApplicationWindow {
 
                         }
 
-                        D.ScrollView {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
+	                        Flickable {
+	                            id: noteListScroll
+	                            Layout.fillWidth: true
+	                            Layout.fillHeight: true
+	                            clip: true
+	                            contentWidth: width
+	                            contentHeight: shortContent ? height + root.noteListElasticSpan * 2 : noteListColumn.implicitHeight
+	                            boundsBehavior: Flickable.StopAtBounds
+	                            boundsMovement: Flickable.FollowBoundsBehavior
+	                            flickableDirection: Flickable.VerticalFlick
+	                            readonly property bool shortContent: noteListColumn.implicitHeight <= height + 1
+	                            property bool returningToCenter: false
 
-                            Column {
-                                id: noteListColumn
-                                width: sidebarPanel.width - 20
-                                topPadding: 0
-                                bottomPadding: 10
+	                            function recenterElastic(animated) {
+	                                if (!shortContent) {
+	                                    return
+	                                }
+	                                noteListReturnAnimation.stop()
+	                                if (animated) {
+	                                    returningToCenter = true
+	                                    noteListReturnAnimation.from = contentY
+	                                    noteListReturnAnimation.to = root.noteListElasticSpan
+	                                    noteListReturnAnimation.start()
+	                                } else {
+	                                    returningToCenter = false
+	                                    contentY = root.noteListElasticSpan
+	                                }
+	                            }
+
+	                            Timer {
+	                                id: noteListElasticReturn
+	                                interval: 48
+	                                repeat: false
+	                                onTriggered: noteListScroll.recenterElastic(true)
+	                            }
+
+	                            NumberAnimation {
+	                                id: noteListReturnAnimation
+	                                target: noteListScroll
+	                                property: "contentY"
+	                                duration: 360
+	                                easing.type: Easing.OutCubic
+	                                onStopped: noteListScroll.returningToCenter = false
+	                            }
+
+	                            Component.onCompleted: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
+	                            onHeightChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
+	                            onContentHeightChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
+	                            onShortContentChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
+	                            onMovementStarted: {
+	                                noteListElasticReturn.stop()
+	                                noteListReturnAnimation.stop()
+	                                returningToCenter = false
+	                            }
+	                            onFlickStarted: {
+	                                noteListElasticReturn.stop()
+	                                noteListReturnAnimation.stop()
+	                                returningToCenter = false
+	                            }
+	                            onMovementEnded: noteListElasticReturn.restart()
+	                            onFlickEnded: noteListElasticReturn.restart()
+	                            onContentYChanged: {
+	                                if (shortContent && !returningToCenter && !moving && !flicking) {
+	                                    noteListElasticReturn.restart()
+	                                }
+	                            }
+
+	                            Column {
+	                                id: noteListColumn
+	                                y: noteListScroll.shortContent ? root.noteListElasticSpan : 0
+	                                width: noteListScroll.width
+	                                topPadding: 0
+	                                bottomPadding: 10
 
                                 Repeater {
                                     model: app.notesList
@@ -912,12 +976,20 @@ D.ApplicationWindow {
                                     onClicked: root.wrapTodos = !root.wrapTodos
                                 }
 
-                                ActionButton {
-                                    label: "在桌面显示"
-                                    iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
-                                    hoverIconSource: "qrc:/assets/toolbar-desktop-accent.svg"
-                                    onClicked: if (detailPane.note) app.openNote(detailPane.note.id)
-                                }
+	                                ActionButton {
+	                                    label: "在桌面显示"
+	                                    iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
+	                                    hoverIconSource: "qrc:/assets/toolbar-desktop-accent.svg"
+	                                    active: detailPane.note && detailPane.note.visible
+	                                    onClicked: {
+	                                        if (!detailPane.note) return
+	                                        if (detailPane.note.visible) {
+	                                            app.hideNote(detailPane.note.id)
+	                                        } else {
+	                                            app.openNote(detailPane.note.id)
+	                                        }
+	                                    }
+	                                }
 
                                 ActionButton {
                                     label: "删除"
@@ -969,16 +1041,16 @@ D.ApplicationWindow {
                         }
                     }
 
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
+	                    Item {
+	                        Layout.fillWidth: true
+	                        Layout.fillHeight: true
+	                        clip: false
 
-                        ListView {
-                            id: todoList
-                            anchors.fill: parent
-                            clip: true
-                            spacing: root.todoRowSpacing
+		                        ListView {
+	                            id: todoList
+	                            anchors.fill: parent
+	                            clip: false
+	                            spacing: root.todoRowSpacing
                             model: detailTodosModel
                             boundsBehavior: Flickable.StopAtBounds
                             displaced: Transition {
@@ -1032,10 +1104,14 @@ D.ApplicationWindow {
                                     NumberAnimation { duration: 110; easing.type: Easing.OutCubic }
                                 }
 
-	                                Canvas {
-	                                    id: rowSurface
-	                                    anchors.fill: parent
-	                                    antialiasing: true
+		                                Canvas {
+		                                    id: rowSurface
+		                                    anchors.left: parent.left
+		                                    anchors.leftMargin: 7
+		                                    anchors.right: parent.right
+		                                    anchors.top: parent.top
+		                                    anchors.bottom: parent.bottom
+		                                    antialiasing: true
 	                                    onPaint: {
 	                                        var ctx = getContext("2d")
 	                                        var w = width
@@ -1090,97 +1166,105 @@ D.ApplicationWindow {
                                 onHasPriorityStripeChanged: rowSurface.requestPaint()
                                 onHeightChanged: rowSurface.requestPaint()
 
-                                HoverHandler { id: rowHover }
+	                                HoverHandler { id: rowHover }
 
-	                                RowLayout {
-	                                    anchors.fill: parent
-	                                    anchors.leftMargin: 6
-	                                    anchors.rightMargin: 12
-	                                    spacing: 5
+		                                Item {
+		                                    id: dragHandleSlot
+		                                    anchors.left: parent.left
+		                                    anchors.leftMargin: -7
+		                                    anchors.top: parent.top
+		                                    anchors.bottom: parent.bottom
+		                                    width: 10
 
-	                                    Item {
-	                                        Layout.preferredWidth: 9
-	                                        Layout.fillHeight: true
+	                                    Canvas {
+	                                        id: dragCanvas
+		                                        anchors.centerIn: parent
+		                                        width: 6
+		                                        height: 12
+		                                        opacity: !todoRow.done && (todoRow.activeRow || dragMouse.containsMouse || todoRow.isDraggingThis) ? 1 : 0
+		                                        antialiasing: true
+	                                        onPaint: {
+	                                            var ctx = getContext("2d")
+	                                            ctx.clearRect(0, 0, width, height)
+	                                            ctx.fillStyle = dragMouse.containsMouse ? (root.lightTheme ? Qt.rgba(0,0,0,0.6) : Qt.rgba(1,1,1,0.6)) : root.weakColor
+	                                            for (var rowDot = 0; rowDot < 3; ++rowDot) {
+	                                                ctx.beginPath()
+	                                                ctx.arc(4, 2.5 + rowDot * 3.5, 1.35, 0, Math.PI * 2)
+	                                                ctx.fill()
+	                                            }
+		                                        }
+		                                        onOpacityChanged: requestPaint()
+		                                        Behavior on opacity { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+		                                    }
 
-                                        Canvas {
-                                            id: dragCanvas
-                                            anchors.centerIn: parent
-                                            width: 6
-                                            height: 12
-                                            opacity: todoRow.done ? 0.28 : (dragMouse.containsMouse || todoRow.isDraggingThis ? 1 : 0.68)
-                                            antialiasing: true
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.clearRect(0, 0, width, height)
-                                                ctx.fillStyle = dragMouse.containsMouse ? (root.lightTheme ? Qt.rgba(0,0,0,0.6) : Qt.rgba(1,1,1,0.6)) : root.weakColor
-                                                for (var rowDot = 0; rowDot < 3; ++rowDot) {
-                                                    ctx.beginPath()
-                                                    ctx.arc(4, 2.5 + rowDot * 3.5, 1.35, 0, Math.PI * 2)
-                                                    ctx.fill()
-                                                }
-                                            }
-                                            onOpacityChanged: requestPaint()
-                                        }
+	                                    MouseArea {
+	                                        id: dragMouse
+	                                        anchors.fill: parent
+	                                        hoverEnabled: true
+	                                        enabled: !todoRow.done
+	                                        preventStealing: true
+	                                        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+	                                        onContainsMouseChanged: dragCanvas.requestPaint()
+	                                        onPressed: function(mouse) {
+	                                            mouse.accepted = true
+	                                            todoList.interactive = false
+	                                            var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
+	                                            root.draggingTodoId = model.id
+	                                            root.dragStartIndex = index
+	                                            root.dragTargetIndex = index
+	                                            root.draggingIndex = index
+	                                            root.dragGrabOffsetY = p.y - todoRow.y
+	                                            todoRow.dragLiftOffset = 0
+	                                        }
+	                                        onPositionChanged: function(mouse) {
+	                                            if (!pressed || root.draggingTodoId.length === 0) {
+	                                                return
+	                                            }
+	                                            mouse.accepted = true
+	                                            var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
+	                                            todoRow.dragLiftOffset = p.y - root.dragGrabOffsetY - todoRow.y
+	                                            var nextTarget = root.dragDropIndexFromPointer(p.y)
+	                                            if (nextTarget !== root.dragTargetIndex) {
+	                                                root.dragTargetIndex = nextTarget
+	                                            }
+	                                        }
+	                                        onReleased: {
+	                                            var appRoot = root
+	                                            var todoId = appRoot.draggingTodoId
+	                                            var target = appRoot.dragTargetIndex
+	                                            var start = appRoot.dragStartIndex
+	                                            var noteId = appRoot.selectedNoteId
+	                                            var releaseContentY = todoList.contentY
+	                                            if (todoId.length > 0 && target >= 0 && target !== start) {
+	                                                appRoot.dragSettling = true
+	                                                todoRow.dragLiftOffset = (target - start) * appRoot.rowDragStep
+	                                                appRoot.queueTodoDragCommit(noteId, todoId, start, target, releaseContentY)
+	                                            } else {
+	                                                todoRow.dragLiftOffset = 0
+	                                                appRoot.resetDragState()
+	                                                todoList.interactive = true
+	                                            }
+	                                        }
+	                                        onCanceled: {
+	                                            dragCommitTimer.stop()
+	                                            root.clearPendingDragCommit()
+	                                            todoRow.dragLiftOffset = 0
+	                                            root.resetDragState()
+	                                            todoList.interactive = true
+	                                        }
+	                                    }
+	                                }
 
-                                        MouseArea {
-                                            id: dragMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            enabled: !todoRow.done
-                                            preventStealing: true
-                                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                                            onContainsMouseChanged: dragCanvas.requestPaint()
-                                            onPressed: function(mouse) {
-                                                mouse.accepted = true
-                                                todoList.interactive = false
-                                                var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                                root.draggingTodoId = model.id
-                                                root.dragStartIndex = index
-                                                root.dragTargetIndex = index
-                                                root.draggingIndex = index
-                                                root.dragGrabOffsetY = p.y - todoRow.y
-                                                todoRow.dragLiftOffset = 0
-                                            }
-                                            onPositionChanged: function(mouse) {
-                                                if (!pressed || root.draggingTodoId.length === 0) {
-                                                    return
-                                                }
-                                                mouse.accepted = true
-                                                var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                                todoRow.dragLiftOffset = p.y - root.dragGrabOffsetY - todoRow.y
-                                                var nextTarget = root.dragDropIndexFromPointer(p.y)
-                                                if (nextTarget !== root.dragTargetIndex) {
-                                                    root.dragTargetIndex = nextTarget
-                                                }
-                                            }
-                                            onReleased: {
-                                                var appRoot = root
-                                                var todoId = appRoot.draggingTodoId
-                                                var target = appRoot.dragTargetIndex
-                                                var start = appRoot.dragStartIndex
-                                                var noteId = appRoot.selectedNoteId
-                                                var releaseContentY = todoList.contentY
-                                                if (todoId.length > 0 && target >= 0 && target !== start) {
-                                                    appRoot.dragSettling = true
-                                                    todoRow.dragLiftOffset = (target - start) * appRoot.rowDragStep
-                                                    appRoot.queueTodoDragCommit(noteId, todoId, start, target, releaseContentY)
-                                                } else {
-                                                    todoRow.dragLiftOffset = 0
-                                                    appRoot.resetDragState()
-                                                    todoList.interactive = true
-                                                }
-                                            }
-                                            onCanceled: {
-                                                dragCommitTimer.stop()
-                                                root.clearPendingDragCommit()
-                                                todoRow.dragLiftOffset = 0
-                                                root.resetDragState()
-                                                todoList.interactive = true
-                                            }
-                                        }
-                                    }
+		                                RowLayout {
+		                                    anchors.left: rowSurface.left
+		                                    anchors.right: rowSurface.right
+		                                    anchors.top: rowSurface.top
+		                                    anchors.bottom: rowSurface.bottom
+			                                    anchors.leftMargin: 11
+		                                    anchors.rightMargin: 12
+		                                    spacing: 5
 
-	                                    Rectangle {
+		                                    Rectangle {
 	                                        Layout.preferredWidth: 16
 	                                        Layout.preferredHeight: 16
 	                                        Layout.alignment: Qt.AlignVCenter

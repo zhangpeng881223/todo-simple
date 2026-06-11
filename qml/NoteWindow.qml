@@ -491,7 +491,7 @@ Item {
                 id: todoList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 14
+                Layout.leftMargin: 9
                 Layout.rightMargin: 14
                 Layout.bottomMargin: 0
                 clip: true
@@ -558,10 +558,14 @@ Item {
                     Component.onCompleted: focusIfPending()
                     onVisibleChanged: if (visible) focusIfPending()
 
-                    Canvas {
-                        id: rowSurface
-                        anchors.fill: parent
-                        antialiasing: true
+	                    Canvas {
+	                        id: rowSurface
+	                        anchors.left: parent.left
+		                        anchors.leftMargin: 11
+	                        anchors.right: parent.right
+	                        anchors.top: parent.top
+	                        anchors.bottom: parent.bottom
+	                        antialiasing: true
                         onPaint: {
                             var ctx = getContext("2d")
                             var w = width
@@ -610,92 +614,98 @@ Item {
                         }
                     }
 
-                    HoverHandler {
-                        id: rowHover
-                    }
+	                    HoverHandler {
+	                        id: rowHover
+	                    }
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 0
-                        anchors.rightMargin: 0
-                        spacing: 2
+	                    Item {
+	                        id: dragHandleSlot
+	                        anchors.left: parent.left
+	                        anchors.top: parent.top
+	                        anchors.bottom: parent.bottom
+	                        width: 9
 
-                        Item {
-                            Layout.preferredWidth: 9
-                            Layout.fillHeight: true
+	                        Canvas {
+	                            id: dragCanvas
+	                            anchors.centerIn: parent
+	                            width: 6
+	                            height: 12
+	                            opacity: !row.done && row.activeRow ? 1 : 0
+	                            antialiasing: true
+	                            onPaint: {
+	                                var ctx = getContext("2d")
+	                                ctx.clearRect(0, 0, width, height)
+	                                ctx.fillStyle = dragMouse.containsMouse ? (root.lightTheme ? Qt.rgba(0,0,0,0.6) : Qt.rgba(1,1,1,0.6)) : root.weakColor
+	                                for (var rowDot = 0; rowDot < 3; ++rowDot) {
+	                                    ctx.beginPath()
+	                                    ctx.arc(4, 2.5 + rowDot * 3.5, 1.35, 0, Math.PI * 2)
+	                                    ctx.fill()
+	                                }
+	                            }
+	                            onOpacityChanged: requestPaint()
+	                        }
 
-                            Canvas {
-                                id: dragCanvas
-                                anchors.centerIn: parent
-                                width: 6
-                                height: 12
-                                opacity: !row.done && row.activeRow ? 1 : 0
-                                antialiasing: true
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.clearRect(0, 0, width, height)
-                                    ctx.fillStyle = dragMouse.containsMouse ? (root.lightTheme ? Qt.rgba(0,0,0,0.6) : Qt.rgba(1,1,1,0.6)) : root.weakColor
-                                    for (var rowDot = 0; rowDot < 3; ++rowDot) {
-                                        ctx.beginPath()
-                                        ctx.arc(4, 2.5 + rowDot * 3.5, 1.35, 0, Math.PI * 2)
-                                        ctx.fill()
-                                    }
-                                }
-                                onOpacityChanged: requestPaint()
-                            }
+	                        MouseArea {
+	                            id: dragMouse
+	                            anchors.fill: parent
+	                            hoverEnabled: true
+	                            enabled: !row.done
+	                            preventStealing: true
+	                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+	                            onContainsMouseChanged: dragCanvas.requestPaint()
+	                            onPressed: function(mouse) {
+	                                mouse.accepted = true
+	                                todoList.interactive = false
+	                                var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
+	                                row.appRoot.draggingTodoId = model.id
+	                                row.appRoot.dragStartIndex = index
+	                                row.appRoot.dragTargetIndex = index
+	                                row.appRoot.draggingIndex = index
+	                                row.appRoot.dragPointerY = p.y
+	                                row.appRoot.dragGrabOffsetY = p.y - row.y
+	                            }
+	                            onPositionChanged: function(mouse) {
+	                                if (!pressed || row.appRoot.draggingTodoId.length === 0) {
+	                                    return
+	                                }
+	                                mouse.accepted = true
+	                                var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
+	                                row.appRoot.dragPointerY = p.y
+	                                row.appRoot.dragTargetIndex = row.appRoot.dragDropIndexFromPointer(p.y)
+	                            }
+	                            onReleased: {
+	                                var todoId = row.appRoot.draggingTodoId
+	                                var target = row.appRoot.dragTargetIndex
+	                                var start = row.appRoot.dragStartIndex
+	                                var releaseContentY = todoList.contentY
+	                                if (todoId.length > 0 && target >= 0 && target !== start) {
+	                                    row.appRoot.dragSettling = true
+	                                    row.appRoot.dragPointerY = row.y + (target - start) * row.appRoot.rowDragStep + row.appRoot.dragGrabOffsetY
+	                                    row.appRoot.queueTodoDragCommit(todoId, start, target, releaseContentY)
+	                                } else {
+	                                    row.appRoot.resetDragState()
+	                                    todoList.interactive = true
+	                                }
+	                            }
+	                            onCanceled: {
+	                                dragCommitTimer.stop()
+	                                row.appRoot.clearPendingDragCommit()
+	                                row.appRoot.resetDragState()
+	                                todoList.interactive = true
+	                            }
+	                        }
+	                    }
 
-                            MouseArea {
-                                id: dragMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                enabled: !row.done
-                                preventStealing: true
-                                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                                onContainsMouseChanged: dragCanvas.requestPaint()
-                                onPressed: function(mouse) {
-                                    mouse.accepted = true
-                                    todoList.interactive = false
-                                    var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                    row.appRoot.draggingTodoId = model.id
-                                    row.appRoot.dragStartIndex = index
-                                    row.appRoot.dragTargetIndex = index
-                                    row.appRoot.draggingIndex = index
-                                    row.appRoot.dragPointerY = p.y
-                                    row.appRoot.dragGrabOffsetY = p.y - row.y
-                                }
-                                onPositionChanged: function(mouse) {
-                                    if (!pressed || row.appRoot.draggingTodoId.length === 0) {
-                                        return
-                                    }
-                                    mouse.accepted = true
-                                    var p = mapToItem(todoList.contentItem, mouse.x, mouse.y)
-                                    row.appRoot.dragPointerY = p.y
-                                    row.appRoot.dragTargetIndex = row.appRoot.dragDropIndexFromPointer(p.y)
-                                }
-                                onReleased: {
-                                    var todoId = row.appRoot.draggingTodoId
-                                    var target = row.appRoot.dragTargetIndex
-                                    var start = row.appRoot.dragStartIndex
-                                    var releaseContentY = todoList.contentY
-                                    if (todoId.length > 0 && target >= 0 && target !== start) {
-                                        row.appRoot.dragSettling = true
-                                        row.appRoot.dragPointerY = row.y + (target - start) * row.appRoot.rowDragStep + row.appRoot.dragGrabOffsetY
-                                        row.appRoot.queueTodoDragCommit(todoId, start, target, releaseContentY)
-                                    } else {
-                                        row.appRoot.resetDragState()
-                                        todoList.interactive = true
-                                    }
-                                }
-                                onCanceled: {
-                                    dragCommitTimer.stop()
-                                    row.appRoot.clearPendingDragCommit()
-                                    row.appRoot.resetDragState()
-                                    todoList.interactive = true
-                                }
-                            }
-                        }
+	                    RowLayout {
+	                        anchors.left: rowSurface.left
+	                        anchors.right: rowSurface.right
+	                        anchors.top: rowSurface.top
+	                        anchors.bottom: rowSurface.bottom
+		                        anchors.leftMargin: 10
+	                        anchors.rightMargin: 0
+	                        spacing: 2
 
-                        Rectangle {
+	                        Rectangle {
                             id: checkbox
                             Layout.preferredWidth: 16
                             Layout.preferredHeight: 16

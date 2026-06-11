@@ -230,11 +230,13 @@ QVariantList TodoApp::notesList() const
         notes.append(value.toObject());
     }
     std::sort(notes.begin(), notes.end(), [](const QJsonObject &a, const QJsonObject &b) {
-        return valueString(a, QStringLiteral("updatedDate"), valueString(a, QStringLiteral("createdDate"))) >
-               valueString(b, QStringLiteral("updatedDate"), valueString(b, QStringLiteral("createdDate")));
+        return valueString(a, QStringLiteral("createdDate"), valueString(a, QStringLiteral("updatedDate"))) >
+               valueString(b, QStringLiteral("createdDate"), valueString(b, QStringLiteral("updatedDate")));
     });
 
     for (const QJsonObject &note : notes) {
+        const QString noteId = note.value(QStringLiteral("id")).toVariant().toString();
+        const QQuickView *noteView = m_noteViews.value(noteId);
         const QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
         const QJsonArray sortedTodos = sortedTodosForDisplay(todos);
         int completed = 0;
@@ -246,12 +248,12 @@ QVariantList TodoApp::notesList() const
         const QString dateSource = valueString(note, QStringLiteral("updatedDate"), note.value(QStringLiteral("createdDate")).toString());
         const QDateTime listDate = QDateTime::fromString(dateSource, Qt::ISODate);
         QVariantMap item;
-        item.insert(QStringLiteral("id"), note.value(QStringLiteral("id")).toVariant().toString());
+        item.insert(QStringLiteral("id"), noteId);
         item.insert(QStringLiteral("title"), note.value(QStringLiteral("title")).toString(QStringLiteral("无标题")));
         item.insert(QStringLiteral("createdDate"), note.value(QStringLiteral("createdDate")).toString());
         item.insert(QStringLiteral("updatedDate"), dateSource);
         item.insert(QStringLiteral("dateText"), listDate.isValid() ? listDate.date().toString(QStringLiteral("yyyy/MM/dd")) : QString());
-        item.insert(QStringLiteral("visible"), note.value(QStringLiteral("visible")).toBool(false));
+        item.insert(QStringLiteral("visible"), noteView && noteView->isVisible());
         item.insert(QStringLiteral("completed"), completed);
         item.insert(QStringLiteral("total"), todos.size());
         QVariantList todoList;
@@ -579,6 +581,7 @@ void TodoApp::openNote(const QString &noteId)
         m_noteViews.value(noteId)->show();
         m_noteViews.value(noteId)->raise();
         m_noteViews.value(noteId)->requestActivate();
+        emit notesChanged();
         return;
     }
 
@@ -626,6 +629,7 @@ void TodoApp::openNote(const QString &noteId)
     connect(view, &QObject::destroyed, this, [this, noteId]() {
         m_noteViews.remove(noteId);
         m_noteControllers.remove(noteId);
+        emit notesChanged();
     });
 
     m_noteViews.insert(noteId, view);
@@ -633,6 +637,7 @@ void TodoApp::openNote(const QString &noteId)
     view->show();
     view->raise();
     view->requestActivate();
+    emit notesChanged();
 }
 
 void TodoApp::hideNote(const QString &noteId)
