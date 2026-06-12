@@ -52,6 +52,9 @@ D.ApplicationWindow {
     readonly property color redColor: "#ff5f58"
     readonly property color greenColor: "#28d764"
     readonly property color blueColor: "#2ea3ff"
+    readonly property color toolbarAccentHoverColor: lightTheme ? "#168fe8" : "#59bcff"
+    readonly property color toolbarAccentActiveColor: lightTheme ? "#006dff" : "#6ac7ff"
+    readonly property color toolbarDangerHoverColor: lightTheme ? "#e9433c" : "#ff746e"
     readonly property string iconTone: lightTheme ? "dark" : "light"
 
     property string searchTerm: ""
@@ -73,7 +76,11 @@ D.ApplicationWindow {
     property real pendingDragContentY: 0
     property bool committingTodoMove: false
     property bool applyingAppTheme: false
-    readonly property real noteListElasticSpan: 24
+    property real defaultTodoAlphaLight: 0.445
+    property real defaultTodoAlphaDark: 0.13
+    property real priorityTodoAlphaLight: 0.275
+    property real priorityTodoAlphaDark: 0.21
+    readonly property real noteListElasticSpan: 20
     readonly property real todoRowHeight: 35.2
     readonly property real todoRowSpacing: 4.4
     readonly property real rowDragStep: todoRowHeight + todoRowSpacing
@@ -134,21 +141,54 @@ D.ApplicationWindow {
         return "#8e8e93"
     }
 
+    function checkboxPriorityColor(priority) {
+        if (root.lightTheme && priority === "green") return "#12e86b"
+        return priorityColor(priority)
+    }
+
+    function defaultTodoBg() {
+        return lightTheme ? Qt.rgba(1, 1, 1, defaultTodoAlphaLight) : Qt.rgba(1, 1, 1, defaultTodoAlphaDark)
+    }
+
     function priorityBg(priority) {
         if (app.priorityStyle === "simple" || priority === "gray" || priority === "none" || !priority) {
-            return "transparent"
+            return defaultTodoBg()
         }
         if (!lightTheme) {
-            if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 87 / 255, 0.065)
-            if (priority === "orange") return Qt.rgba(255 / 255, 189 / 255, 46 / 255, 0.065)
-            if (priority === "blue") return Qt.rgba(29 / 255, 140 / 255, 248 / 255, 0.065)
-            if (priority === "green") return Qt.rgba(40 / 255, 200 / 255, 64 / 255, 0.065)
+            if (priority === "red") return Qt.rgba(255 / 255, 112 / 255, 104 / 255, priorityTodoAlphaDark)
+            if (priority === "orange") return Qt.rgba(255 / 255, 197 / 255, 68 / 255, priorityTodoAlphaDark)
+            if (priority === "blue") return Qt.rgba(64 / 255, 174 / 255, 255 / 255, priorityTodoAlphaDark)
+            if (priority === "green") return Qt.rgba(62 / 255, 226 / 255, 116 / 255, priorityTodoAlphaDark)
         }
-        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 88 / 255, 0.095)
-        if (priority === "orange") return Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.095)
-        if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, 0.095)
-        if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, 0.095)
-        return "transparent"
+        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 88 / 255, priorityTodoAlphaLight)
+        if (priority === "orange") return Qt.rgba(255 / 255, 181 / 255, 32 / 255, priorityTodoAlphaLight)
+        if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, priorityTodoAlphaLight)
+        if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, priorityTodoAlphaLight)
+        return defaultTodoBg()
+    }
+
+    function currentDefaultTodoAlpha() {
+        return lightTheme ? defaultTodoAlphaLight : defaultTodoAlphaDark
+    }
+
+    function currentPriorityTodoAlpha() {
+        return lightTheme ? priorityTodoAlphaLight : priorityTodoAlphaDark
+    }
+
+    function setCurrentDefaultTodoAlpha(value) {
+        if (lightTheme) {
+            defaultTodoAlphaLight = value
+        } else {
+            defaultTodoAlphaDark = value
+        }
+    }
+
+    function setCurrentPriorityTodoAlpha(value) {
+        if (lightTheme) {
+            priorityTodoAlphaLight = value
+        } else {
+            priorityTodoAlphaDark = value
+        }
     }
 
     function priorityTodoCount() {
@@ -613,70 +653,100 @@ D.ApplicationWindow {
 	                            Layout.fillHeight: true
 	                            clip: true
 	                            contentWidth: width
-	                            contentHeight: shortContent ? height + root.noteListElasticSpan * 2 : noteListColumn.implicitHeight
-	                            boundsBehavior: Flickable.StopAtBounds
-	                            boundsMovement: Flickable.FollowBoundsBehavior
-	                            flickableDirection: Flickable.VerticalFlick
-	                            readonly property bool shortContent: noteListColumn.implicitHeight <= height + 1
-	                            property bool returningToCenter: false
+		                            contentHeight: shortContent ? height : noteListColumn.implicitHeight
+		                            boundsBehavior: Flickable.DragAndOvershootBounds
+		                            boundsMovement: Flickable.FollowBoundsBehavior
+		                            flickableDirection: Flickable.VerticalFlick
+		                            readonly property bool shortContent: noteListColumn.implicitHeight <= height + 1
+		                            property real shortElasticOffset: 0
 
-	                            function recenterElastic(animated) {
-	                                if (!shortContent) {
-	                                    return
-	                                }
-	                                noteListReturnAnimation.stop()
-	                                if (animated) {
-	                                    returningToCenter = true
-	                                    noteListReturnAnimation.from = contentY
-	                                    noteListReturnAnimation.to = root.noteListElasticSpan
-	                                    noteListReturnAnimation.start()
-	                                } else {
-	                                    returningToCenter = false
-	                                    contentY = root.noteListElasticSpan
-	                                }
-	                            }
+		                            function resetShortElastic(animated) {
+		                                if (animated) {
+		                                    noteListReturnAnimation.restart()
+		                                } else {
+		                                    noteListReturnAnimation.stop()
+		                                    shortElasticOffset = 0
+		                                }
+		                            }
 
-	                            Timer {
-	                                id: noteListElasticReturn
-	                                interval: 48
-	                                repeat: false
-	                                onTriggered: noteListScroll.recenterElastic(true)
-	                            }
+		                            function applyShortElasticWheel(wheel) {
+		                                if (!shortContent) {
+		                                    return
+		                                }
 
-	                            NumberAnimation {
-	                                id: noteListReturnAnimation
-	                                target: noteListScroll
-	                                property: "contentY"
-	                                duration: 360
-	                                easing.type: Easing.OutCubic
-	                                onStopped: noteListScroll.returningToCenter = false
-	                            }
+		                                var delta = 0
+		                                if (wheel.pixelDelta && wheel.pixelDelta.y !== 0) {
+		                                    delta = wheel.pixelDelta.y
+		                                } else if (wheel.angleDelta && wheel.angleDelta.y !== 0) {
+		                                    delta = wheel.angleDelta.y / 8
+		                                }
 
-	                            Component.onCompleted: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
-	                            onHeightChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
-	                            onContentHeightChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
-	                            onShortContentChanged: Qt.callLater(function() { noteListScroll.recenterElastic(false) })
-	                            onMovementStarted: {
-	                                noteListElasticReturn.stop()
-	                                noteListReturnAnimation.stop()
-	                                returningToCenter = false
-	                            }
-	                            onFlickStarted: {
-	                                noteListElasticReturn.stop()
-	                                noteListReturnAnimation.stop()
-	                                returningToCenter = false
-	                            }
-	                            onMovementEnded: noteListElasticReturn.restart()
-	                            onFlickEnded: noteListElasticReturn.restart()
-	                            onContentYChanged: {
-	                                if (shortContent && !returningToCenter && !moving && !flicking) {
-	                                    noteListElasticReturn.restart()
-	                                }
-	                            }
+		                                if (Math.abs(delta) < 0.1) {
+		                                    return
+		                                }
 
-	                            Column {
-	                                id: noteListColumn
-	                                y: noteListScroll.shortContent ? root.noteListElasticSpan : 0
+		                                noteListElasticReturn.stop()
+		                                noteListReturnAnimation.stop()
+
+		                                var nextOffset = shortElasticOffset + delta * 0.16
+		                                if (Math.abs(shortElasticOffset) > root.noteListElasticSpan * 0.55
+		                                        && Math.sign(nextOffset) === Math.sign(shortElasticOffset)) {
+		                                    nextOffset = shortElasticOffset + delta * 0.07
+		                                }
+		                                shortElasticOffset = Math.max(-root.noteListElasticSpan,
+		                                                              Math.min(root.noteListElasticSpan, nextOffset))
+		                                wheel.accepted = true
+		                                noteListElasticReturn.restart()
+		                            }
+
+		                            Timer {
+		                                id: noteListElasticReturn
+		                                interval: 80
+		                                repeat: false
+		                                onTriggered: noteListScroll.resetShortElastic(true)
+		                            }
+
+		                            NumberAnimation {
+		                                id: noteListReturnAnimation
+		                                target: noteListScroll
+		                                property: "shortElasticOffset"
+		                                to: 0
+		                                duration: 220
+		                                easing.type: Easing.OutQuart
+		                            }
+
+		                            rebound: Transition {
+		                                NumberAnimation {
+		                                    properties: "x,y"
+		                                    duration: 240
+		                                    easing.type: Easing.OutCubic
+		                                }
+		                            }
+
+		                            WheelHandler {
+		                                target: null
+		                                enabled: noteListScroll.shortContent
+		                                onWheel: function(wheel) {
+		                                    noteListScroll.applyShortElasticWheel(wheel)
+		                                }
+		                            }
+
+		                            Component.onCompleted: Qt.callLater(function() { noteListScroll.resetShortElastic(false) })
+		                            onHeightChanged: Qt.callLater(function() { noteListScroll.resetShortElastic(false) })
+		                            onContentHeightChanged: Qt.callLater(function() { noteListScroll.resetShortElastic(false) })
+		                            onShortContentChanged: Qt.callLater(function() { noteListScroll.resetShortElastic(false) })
+		                            onMovementStarted: {
+		                                noteListElasticReturn.stop()
+		                                noteListReturnAnimation.stop()
+		                            }
+		                            onFlickStarted: {
+		                                noteListElasticReturn.stop()
+		                                noteListReturnAnimation.stop()
+		                            }
+
+		                            Column {
+		                                id: noteListColumn
+		                                y: noteListScroll.shortContent ? noteListScroll.shortElasticOffset : 0
 	                                width: noteListScroll.width
 	                                topPadding: 0
 	                                bottomPadding: 10
@@ -967,26 +1037,29 @@ D.ApplicationWindow {
                                 Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
                                 spacing: 10
 
-                                ActionButton {
-                                    label: "总结"
-                                    iconSource: "qrc:/assets/header-ai-" + root.iconTone + ".svg"
-                                    hoverIconSource: "qrc:/assets/header-ai-accent.svg"
-                                    onClicked: if (detailPane.note) root.notify(app.summarizeNote(detailPane.note.id))
-                                }
+	                                ActionButton {
+	                                    label: "总结"
+	                                    iconSource: "qrc:/assets/header-ai-" + root.iconTone + ".svg"
+	                                    hoverIconSource: "qrc:/assets/header-ai-accent.svg"
+	                                    activeIconSource: "qrc:/assets/header-ai-active-" + root.iconTone + ".svg"
+	                                    onClicked: if (detailPane.note) root.notify(app.summarizeNote(detailPane.note.id))
+	                                }
 
                                 ActionButton {
-                                    label: "允许换行"
-                                    iconSource: "qrc:/assets/toolbar-wrap-" + root.iconTone + ".svg"
-                                    hoverIconSource: "qrc:/assets/toolbar-wrap-accent.svg"
-                                    active: root.wrapTodos
-                                    onClicked: root.wrapTodos = !root.wrapTodos
-                                }
+	                                    label: "允许换行"
+	                                    iconSource: "qrc:/assets/toolbar-wrap-" + root.iconTone + ".svg"
+	                                    hoverIconSource: "qrc:/assets/toolbar-wrap-accent.svg"
+	                                    activeIconSource: "qrc:/assets/toolbar-wrap-active-" + root.iconTone + ".svg"
+	                                    active: root.wrapTodos
+	                                    onClicked: root.wrapTodos = !root.wrapTodos
+	                                }
 
 	                                ActionButton {
-	                                    label: "在桌面显示"
-	                                    iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
-	                                    hoverIconSource: "qrc:/assets/toolbar-desktop-accent.svg"
-	                                    active: detailPane.note && detailPane.note.visible
+		                                    label: "在桌面显示"
+		                                    iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
+		                                    hoverIconSource: "qrc:/assets/toolbar-desktop-accent.svg"
+		                                    activeIconSource: "qrc:/assets/toolbar-desktop-active-" + root.iconTone + ".svg"
+		                                    active: detailPane.note && detailPane.note.visible
 	                                    onClicked: {
 	                                        if (!detailPane.note) return
 	                                        if (detailPane.note.visible) {
@@ -999,10 +1072,11 @@ D.ApplicationWindow {
 
                                 ActionButton {
                                     label: "删除"
-                                    danger: true
-                                    iconSource: "qrc:/assets/toolbar-trash-" + root.iconTone + ".svg"
-                                    hoverIconSource: "qrc:/assets/toolbar-trash-danger.svg"
-                                    onClicked: {
+	                                    danger: true
+	                                    iconSource: "qrc:/assets/toolbar-trash-" + root.iconTone + ".svg"
+	                                    hoverIconSource: "qrc:/assets/toolbar-trash-danger.svg"
+	                                    activeIconSource: "qrc:/assets/toolbar-trash-danger.svg"
+	                                    onClicked: {
                                         if (!detailPane.note) return
                                         root.contextDeleteNoteId = detailPane.note.id
                                         root.contextDeleteNoteTitle = detailPane.note.title || "无标题"
@@ -1135,9 +1209,9 @@ D.ApplicationWindow {
 	                                        ctx.lineTo(0, r)
 	                                        ctx.quadraticCurveTo(0, 0, r, 0)
 	                                        ctx.closePath()
-	                                        ctx.fillStyle = todoRow.hasPriorityStripe
-	                                                ? (todoRow.activeRow && !todoRow.isDraggingThis ? root.todoRowHoverColor : root.priorityBg(todoRow.priority))
-	                                                : (todoRow.activeRow && !todoRow.isDraggingThis ? root.todoRowHoverColor : "transparent")
+		                                        ctx.fillStyle = todoRow.activeRow && !todoRow.isDraggingThis
+		                                                ? root.todoRowHoverColor
+		                                                : root.priorityBg(todoRow.priority)
 	                                        ctx.fill()
 
 	                                        if (!todoRow.hasPriorityStripe) {
@@ -1171,8 +1245,16 @@ D.ApplicationWindow {
                                 onPriorityChanged: rowSurface.requestPaint()
                                 onHasPriorityStripeChanged: rowSurface.requestPaint()
                                 onHeightChanged: rowSurface.requestPaint()
+                                Connections {
+                                    target: root
+                                    function onLightThemeChanged() { rowSurface.requestPaint() }
+                                    function onDefaultTodoAlphaLightChanged() { rowSurface.requestPaint() }
+                                    function onDefaultTodoAlphaDarkChanged() { rowSurface.requestPaint() }
+                                    function onPriorityTodoAlphaLightChanged() { rowSurface.requestPaint() }
+                                    function onPriorityTodoAlphaDarkChanged() { rowSurface.requestPaint() }
+                                }
 
-	                                HoverHandler { id: rowHover }
+		                                HoverHandler { id: rowHover }
 
 		                                Item {
 		                                    id: dragHandleSlot
@@ -1270,25 +1352,28 @@ D.ApplicationWindow {
 		                                    anchors.rightMargin: 12
 		                                    spacing: 5
 
-		                                    Rectangle {
-	                                        Layout.preferredWidth: 16
-	                                        Layout.preferredHeight: 16
-	                                        Layout.alignment: Qt.AlignVCenter
-	                                        radius: 4
-	                                        color: "transparent"
-	                                        border.width: 1
-	                                        border.color: app.priorityStyle === "simple" || todoRow.priority !== "gray"
-                                                          ? root.priorityColor(todoRow.priority)
-                                                          : root.mutedColor
+			                                    Rectangle {
+		                                        Layout.preferredWidth: 16
+		                                        Layout.preferredHeight: 16
+		                                        Layout.alignment: Qt.AlignVCenter
+		                                        radius: 4
+		                                        color: todoRow.done
+		                                               ? (root.lightTheme ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(1, 1, 1, 0.30))
+		                                               : "transparent"
+		                                        border.width: 1.2
+		                                        border.color: todoRow.done
+		                                                      ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(1, 1, 1, 0.60))
+		                                                      : (app.priorityStyle === "simple" || todoRow.priority !== "gray"
+		                                                         ? root.checkboxPriorityColor(todoRow.priority)
+		                                                         : root.mutedColor)
 
-                                        D.Label {
-                                            anchors.centerIn: parent
-                                            text: todoRow.done ? "✓" : ""
-                                            color: app.priorityStyle === "simple" || todoRow.priority !== "gray"
-                                                   ? root.priorityColor(todoRow.priority)
-                                                   : root.mutedColor
-                                            font.pixelSize: 11
-                                        }
+	                                        Text {
+	                                            anchors.centerIn: parent
+	                                            y: -1
+	                                            text: todoRow.done ? "✓" : ""
+	                                            color: root.lightTheme ? "#333333" : "white"
+	                                            font.pixelSize: 11
+	                                        }
 
                                         MouseArea {
                                             anchors.fill: parent
@@ -1530,6 +1615,62 @@ D.ApplicationWindow {
         }
     }
 
+    Rectangle {
+        id: todoAlphaDebugPanel
+        z: 500
+        width: 318
+        height: 118
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 22
+        anchors.bottomMargin: 22
+        radius: 14
+        antialiasing: true
+        color: root.lightTheme ? Qt.rgba(1, 1, 1, 0.88) : Qt.rgba(31 / 255, 32 / 255, 34 / 255, 0.90)
+        border.width: 1
+        border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.12)
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                D.Label {
+                    Layout.fillWidth: true
+                    text: "待办底色透明度测试"
+                    color: root.textColor
+                    font.pixelSize: 13
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+
+                D.Label {
+                    text: root.lightTheme ? "浅色" : "深色"
+                    color: root.mutedColor
+                    font.pixelSize: 12
+                }
+            }
+
+            AlphaDebugRow {
+                Layout.fillWidth: true
+                label: "默认"
+                value: root.currentDefaultTodoAlpha()
+                onAlphaChanged: function(alpha) { root.setCurrentDefaultTodoAlpha(alpha) }
+            }
+
+            AlphaDebugRow {
+                Layout.fillWidth: true
+                label: "优先级"
+                value: root.currentPriorityTodoAlpha()
+                onAlphaChanged: function(alpha) { root.setCurrentPriorityTodoAlpha(alpha) }
+            }
+        }
+    }
+
     Timer {
         id: confirmDeleteTimer
         interval: 1400
@@ -1636,17 +1777,19 @@ D.ApplicationWindow {
         }
     }
 
-    component ActionButton: QQC.ToolButton {
-        id: actionButton
-        property string label: ""
-        property string iconSource: ""
-        property string hoverIconSource: iconSource
-        property bool danger: false
-        property bool active: false
-        property bool emphasized: false
-        signal triggered()
+	    component ActionButton: QQC.ToolButton {
+	        id: actionButton
+	        property string label: ""
+	        property string iconSource: ""
+	        property string hoverIconSource: iconSource
+	        property string activeIconSource: hoverIconSource
+	        property bool danger: false
+	        property bool active: false
+	        property bool emphasized: false
+	        signal triggered()
+	        readonly property bool strongState: active || emphasized || pressed
 
-        width: contentRow.implicitWidth
+	        width: contentRow.implicitWidth
         height: 24
         hoverEnabled: true
         padding: 0
@@ -1657,28 +1800,67 @@ D.ApplicationWindow {
             anchors.centerIn: parent
             spacing: 5
 
-            Image {
-                width: 16
-                height: 16
-                anchors.verticalCenter: parent.verticalCenter
-                source: actionButton.hovered || actionButton.active || actionButton.emphasized ? actionButton.hoverIconSource : actionButton.iconSource
-                sourceSize.width: 16
-                sourceSize.height: 16
-                opacity: actionButton.hovered || actionButton.active || actionButton.emphasized ? 1 : 0.9
-            }
+	            Image {
+	                width: 16
+	                height: 16
+	                anchors.verticalCenter: parent.verticalCenter
+	                source: actionButton.strongState
+	                        ? actionButton.activeIconSource
+	                        : (actionButton.hovered ? actionButton.hoverIconSource : actionButton.iconSource)
+	                sourceSize.width: 16
+	                sourceSize.height: 16
+	                opacity: actionButton.hovered || actionButton.strongState ? 1 : 0.9
+	            }
 
             D.Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: actionButton.label
-                color: actionButton.danger
-                       ? (actionButton.hovered || actionButton.emphasized ? root.redColor : root.textColor)
-                       : (actionButton.hovered || actionButton.active || actionButton.emphasized ? root.blueColor : root.textColor)
+	                anchors.verticalCenter: parent.verticalCenter
+	                text: actionButton.label
+	                color: actionButton.danger
+	                       ? (actionButton.hovered || actionButton.strongState ? root.toolbarDangerHoverColor : root.textColor)
+	                       : (actionButton.strongState
+	                          ? root.toolbarAccentActiveColor
+	                          : (actionButton.hovered ? root.toolbarAccentHoverColor : root.textColor))
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
                 Behavior on color { ColorAnimation { duration: 120 } }
             }
         }
 
-        background: Item {}
+	        background: Item {}
+	    }
+
+    component AlphaDebugRow: RowLayout {
+        id: alphaDebugRow
+        property string label: ""
+        property real value: 0
+        signal alphaChanged(real alpha)
+
+        spacing: 8
+
+        D.Label {
+            Layout.preferredWidth: 42
+            text: alphaDebugRow.label
+            color: root.mutedColor
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
+        QQC.Slider {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 22
+            from: 0
+            to: 0.45
+            stepSize: 0.005
+            value: alphaDebugRow.value
+            onMoved: alphaDebugRow.alphaChanged(value)
+        }
+
+        D.Label {
+            Layout.preferredWidth: 42
+            text: Math.round(alphaDebugRow.value * 1000) / 1000
+            color: root.textColor
+            font.pixelSize: 12
+            horizontalAlignment: Text.AlignRight
+        }
     }
 }

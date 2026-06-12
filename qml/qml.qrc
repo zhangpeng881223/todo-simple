@@ -10,6 +10,8 @@
         <file>assets/header-ai-dark.svg</file>
         <file>assets/header-ai-light.svg</file>
         <file>assets/header-ai-accent.svg</file>
+        <file>assets/header-ai-active-dark.svg</file>
+        <file>assets/header-ai-active-light.svg</file>
         <file>assets/header-plus-dark.svg</file>
         <file>assets/header-plus-light.svg</file>
         <file>assets/header-layer-normal-dark.svg</file>
@@ -29,9 +31,13 @@
         <file>assets/toolbar-wrap-dark.svg</file>
         <file>assets/toolbar-wrap-light.svg</file>
         <file>assets/toolbar-wrap-accent.svg</file>
+        <file>assets/toolbar-wrap-active-dark.svg</file>
+        <file>assets/toolbar-wrap-active-light.svg</file>
         <file>assets/toolbar-desktop-dark.svg</file>
         <file>assets/toolbar-desktop-light.svg</file>
         <file>assets/toolbar-desktop-accent.svg</file>
+        <file>assets/toolbar-desktop-active-dark.svg</file>
+        <file>assets/toolbar-desktop-active-light.svg</file>
         <file>assets/toolbar-trash-dark.svg</file>
         <file>assets/toolbar-trash-light.svg</file>
         <file>assets/toolbar-trash-accent.svg</file>
