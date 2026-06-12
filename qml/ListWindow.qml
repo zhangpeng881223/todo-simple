@@ -76,10 +76,10 @@ D.ApplicationWindow {
     property real pendingDragContentY: 0
     property bool committingTodoMove: false
     property bool applyingAppTheme: false
-    property real defaultTodoAlphaLight: 0.445
-    property real defaultTodoAlphaDark: 0.13
-    property real priorityTodoAlphaLight: 0.275
-    property real priorityTodoAlphaDark: 0.21
+    property real defaultTodoAlphaLight: app.mainDefaultTodoAlphaLight
+    property real defaultTodoAlphaDark: app.mainDefaultTodoAlphaDark
+    property real priorityTodoAlphaLight: app.mainPriorityTodoAlphaLight
+    property real priorityTodoAlphaDark: app.mainPriorityTodoAlphaDark
     readonly property real noteListElasticSpan: 20
     readonly property real todoRowHeight: 35.2
     readonly property real todoRowSpacing: 4.4
@@ -165,30 +165,6 @@ D.ApplicationWindow {
         if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, priorityTodoAlphaLight)
         if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, priorityTodoAlphaLight)
         return defaultTodoBg()
-    }
-
-    function currentDefaultTodoAlpha() {
-        return lightTheme ? defaultTodoAlphaLight : defaultTodoAlphaDark
-    }
-
-    function currentPriorityTodoAlpha() {
-        return lightTheme ? priorityTodoAlphaLight : priorityTodoAlphaDark
-    }
-
-    function setCurrentDefaultTodoAlpha(value) {
-        if (lightTheme) {
-            defaultTodoAlphaLight = value
-        } else {
-            defaultTodoAlphaDark = value
-        }
-    }
-
-    function setCurrentPriorityTodoAlpha(value) {
-        if (lightTheme) {
-            priorityTodoAlphaLight = value
-        } else {
-            priorityTodoAlphaDark = value
-        }
     }
 
     function priorityTodoCount() {
@@ -1615,62 +1591,6 @@ D.ApplicationWindow {
         }
     }
 
-    Rectangle {
-        id: todoAlphaDebugPanel
-        z: 500
-        width: 318
-        height: 118
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.rightMargin: 22
-        anchors.bottomMargin: 22
-        radius: 14
-        antialiasing: true
-        color: root.lightTheme ? Qt.rgba(1, 1, 1, 0.88) : Qt.rgba(31 / 255, 32 / 255, 34 / 255, 0.90)
-        border.width: 1
-        border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.12)
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 12
-            spacing: 8
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                D.Label {
-                    Layout.fillWidth: true
-                    text: "待办底色透明度测试"
-                    color: root.textColor
-                    font.pixelSize: 13
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                }
-
-                D.Label {
-                    text: root.lightTheme ? "浅色" : "深色"
-                    color: root.mutedColor
-                    font.pixelSize: 12
-                }
-            }
-
-            AlphaDebugRow {
-                Layout.fillWidth: true
-                label: "默认"
-                value: root.currentDefaultTodoAlpha()
-                onAlphaChanged: function(alpha) { root.setCurrentDefaultTodoAlpha(alpha) }
-            }
-
-            AlphaDebugRow {
-                Layout.fillWidth: true
-                label: "优先级"
-                value: root.currentPriorityTodoAlpha()
-                onAlphaChanged: function(alpha) { root.setCurrentPriorityTodoAlpha(alpha) }
-            }
-        }
-    }
-
     Timer {
         id: confirmDeleteTimer
         interval: 1400
@@ -1829,38 +1749,4 @@ D.ApplicationWindow {
 	        background: Item {}
 	    }
 
-    component AlphaDebugRow: RowLayout {
-        id: alphaDebugRow
-        property string label: ""
-        property real value: 0
-        signal alphaChanged(real alpha)
-
-        spacing: 8
-
-        D.Label {
-            Layout.preferredWidth: 42
-            text: alphaDebugRow.label
-            color: root.mutedColor
-            font.pixelSize: 12
-            elide: Text.ElideRight
-        }
-
-        QQC.Slider {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 22
-            from: 0
-            to: 0.45
-            stepSize: 0.005
-            value: alphaDebugRow.value
-            onMoved: alphaDebugRow.alphaChanged(value)
-        }
-
-        D.Label {
-            Layout.preferredWidth: 42
-            text: Math.round(alphaDebugRow.value * 1000) / 1000
-            color: root.textColor
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignRight
-        }
-    }
 }

@@ -10,13 +10,12 @@ Item {
     height: 500
 
     readonly property var hostWindow: Window.window
-    readonly property bool lightTheme: app.noteTheme === "light"
+    readonly property bool lightTheme: app.noteTheme === "light" || (app.noteTheme === "system" && app.theme === "light")
     readonly property real bgOpacity: Math.max(0, Math.min(100, app.opacity)) / 100
     readonly property color cardColor: lightTheme ? Qt.rgba(240 / 255, 240 / 255, 240 / 255, bgOpacity) : Qt.rgba(40 / 255, 40 / 255, 40 / 255, bgOpacity)
     readonly property color textColor: lightTheme ? "#333333" : "white"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(1, 1, 1, 0.42)
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.30) : Qt.rgba(1, 1, 1, 0.30)
-    readonly property color dividerColor: lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.05)
     property string pendingFocusId: ""
     property int pendingFocusIndex: -1
     property string draggingTodoId: ""
@@ -900,14 +899,6 @@ Item {
                                 onTriggered: row.confirmingDelete = false
                             }
                         }
-                    }
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: 1
-                        color: root.dividerColor
                     }
 
                 }

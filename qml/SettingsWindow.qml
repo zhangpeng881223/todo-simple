@@ -6,31 +6,33 @@ import org.deepin.dtk 1.0 as D
 
 Item {
     id: root
-    width: 480
-    height: 430
+    width: 760
+    height: 560
 
     readonly property var hostWindow: Window.window
     readonly property bool lightTheme: app.theme === "light"
-    readonly property color windowColor: lightTheme ? "#f0f0f0" : "#282828"
-    readonly property color textColor: lightTheme ? "#333333" : "#ffffff"
-    readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.40) : Qt.rgba(1, 1, 1, 0.40)
-    readonly property color labelColor: lightTheme ? Qt.rgba(0, 0, 0, 0.70) : Qt.rgba(1, 1, 1, 0.70)
-    readonly property color borderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.10)
-    readonly property color rowLine: lightTheme ? Qt.rgba(0, 0, 0, 0.05) : Qt.rgba(1, 1, 1, 0.05)
-    readonly property color headerLine: lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.08)
-    readonly property color controlBase: lightTheme ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.08)
-    readonly property color controlBorder: lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.15)
-    readonly property color controlText: lightTheme ? "#303030" : "#f4f4f4"
+    readonly property color windowColor: lightTheme ? "#f7f8fa" : "#202124"
+    readonly property color panelColor: lightTheme ? "#ffffff" : "#2b2c2f"
+    readonly property color navColor: lightTheme ? "#f1f2f4" : "#26272a"
+    readonly property color textColor: lightTheme ? "#242628" : "#f5f5f5"
+    readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.48) : Qt.rgba(1, 1, 1, 0.46)
+    readonly property color borderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10)
+    readonly property color rowLine: lightTheme ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.065)
+    readonly property color controlBase: lightTheme ? "#f2f3f5" : "#35363a"
+    readonly property color accentColor: "#2d8cff"
+    property int activeIndex: 0
+    property string aiScope: "note"
+    property string aiTemplateDraft: ""
+    property bool aiDirty: false
     property string syncedTheme: ""
+    property string toastMessage: ""
 
     function notify(message) {
         var text = String(message || "")
         if (text.length === 0) return
-        if (D.DTK && D.DTK.sendMessage) {
-            D.DTK.sendMessage(root.hostWindow, text)
-        } else {
-            console.log(text)
-        }
+        toastMessage = text
+        toastTimer.restart()
+        console.log(text)
     }
 
     function syncDtkPalette() {
@@ -39,19 +41,50 @@ Item {
         }
     }
 
+    function formatAlpha(value) {
+        return Number(value).toFixed(3)
+    }
+
+    function setAlpha(key, value) {
+        app.updateSetting(key, Number(value.toFixed(3)))
+    }
+
+    function resetMainWindowAlpha() {
+        app.updateSetting("mainDefaultTodoAlphaLight", 0.445)
+        app.updateSetting("mainPriorityTodoAlphaLight", 0.275)
+        app.updateSetting("mainDefaultTodoAlphaDark", 0.13)
+        app.updateSetting("mainPriorityTodoAlphaDark", 0.21)
+        notify("主窗口样式已恢复默认")
+    }
+
+    function aiScopeName(scope) {
+        if (scope === "week") return "本周"
+        if (scope === "month") return "本月"
+        return "本条"
+    }
+
+    function loadAiTemplate(scope) {
+        aiScope = scope
+        aiTemplateDraft = app.summaryTemplate(scope)
+        aiDirty = false
+    }
+
     Component.onCompleted: {
         syncedTheme = app.theme
         syncDtkPalette()
+        loadAiTemplate("note")
     }
 
     Connections {
         target: app
         function onSettingsChanged() {
-            if (root.syncedTheme === app.theme) {
-                return
+            if (root.syncedTheme !== app.theme) {
+                root.syncedTheme = app.theme
+                root.syncDtkPalette()
             }
-            root.syncedTheme = app.theme
-            root.syncDtkPalette()
+            if (!root.aiDirty) {
+                root.loadAiTemplate(root.aiScope)
+            }
         }
     }
 
@@ -70,7 +103,7 @@ Item {
 
             Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 49
+                Layout.preferredHeight: 52
 
                 DragHandler {
                     target: null
@@ -80,226 +113,105 @@ Item {
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 12
+                    anchors.leftMargin: 18
+                    anchors.rightMargin: 14
                     spacing: 8
 
                     D.Label {
                         Layout.fillWidth: true
                         text: "设置"
                         color: root.textColor
-                        font.pixelSize: 15
+                        font.pixelSize: 16
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                     }
 
                     HeaderToolButton {
-                        Layout.preferredWidth: 24
-                        Layout.preferredHeight: 24
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
                         text: "×"
-                        textSize: 18
+                        textSize: 19
                         hoverColor: "#ff5f57"
                         onClicked: if (root.hostWindow) root.hostWindow.close()
                     }
                 }
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    height: 1
-                    color: root.headerLine
-                }
             }
 
-            Flickable {
-                id: settingsFlick
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
-                contentWidth: width
-                contentHeight: contentColumn.implicitHeight + 32
+                Layout.leftMargin: 14
+                Layout.rightMargin: 14
+                Layout.bottomMargin: 14
+                spacing: 14
 
-                ColumnLayout {
-                    id: contentColumn
-                    x: 16
-                    y: 16
-                    width: Math.max(0, settingsFlick.width - 32)
-                    spacing: 0
-
-                    SettingsRow {
-                        title: "待办窗口颜色"
-                        desc: "选择待办窗口的背景色"
-                        control: CompactComboBox {
-                            values: ["黑色", "白色"]
-                            currentIndex: app.noteTheme === "light" ? 1 : 0
-                            onActivated: function(index) {
-                                app.updateSetting("noteTheme", index === 1 ? "light" : "dark")
-                                root.notify("待办窗口颜色已更新")
-                            }
-                        }
-                    }
-
-                    SettingsRow {
-                        title: "待办窗口透明度"
-                        desc: "调整待办窗口透明度"
-                        control: RowLayout {
-                            implicitWidth: 200
-                            implicitHeight: 24
-                            spacing: 12
-
-                            QQC.Slider {
-                                Layout.preferredWidth: 148
-                                Layout.preferredHeight: 20
-                                from: 0
-                                to: 100
-                                stepSize: 1
-                                value: app.opacity
-                                onMoved: app.updateSetting("opacity", Math.round(value))
-                            }
-
-                            D.Label {
-                                Layout.preferredWidth: 40
-                                text: app.opacity + "%"
-                                color: root.textColor
-                                font.pixelSize: 13
-                                horizontalAlignment: Text.AlignRight
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
-
-                    SettingsRow {
-                        title: "优先级样式"
-                        desc: "选择待办事项优先级显示样式"
-                        control: CompactComboBox {
-                            values: ["多彩", "简约"]
-                            currentIndex: app.priorityStyle === "simple" ? 1 : 0
-                            onActivated: function(index) {
-                                app.updateSetting("priorityStyle", index === 1 ? "simple" : "colorful")
-                                root.notify("设置已保存")
-                            }
-                        }
-                    }
+                Rectangle {
+                    Layout.preferredWidth: 166
+                    Layout.fillHeight: true
+                    radius: 10
+                    color: root.navColor
+                    border.width: 1
+                    border.color: root.borderColor
 
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.topMargin: 20
-                        spacing: 8
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 4
 
-                        D.Label {
-                            text: "数据存储"
-                            color: root.labelColor
-                            font.pixelSize: 13
-                        }
-
-                        CompactTextField {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 34
-                            text: app.storagePath
-                            readOnly: true
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.topMargin: 4
-                            spacing: 12
-
-                            CompactDataButton {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 40
-                                iconName: "data-export"
-                                text: "导出数据"
-                                onClicked: root.notify(app.exportData())
-                            }
-
-                            CompactDataButton {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 40
-                                iconName: "data-import"
-                                text: "导入数据"
-                                onClicked: root.notify(app.importData())
-                            }
-                        }
-
-                        D.Label {
-                            Layout.fillWidth: true
-                            text: "导出所有待办事项，可在新电脑上导入恢复"
-                            color: root.mutedColor
-                            font.pixelSize: 11
-                            elide: Text.ElideRight
-                        }
+                        NavButton { text: "主窗口样式"; index: 0 }
+                        NavButton { text: "桌面待办样式"; index: 1 }
+                        NavButton { text: "AI总结"; index: 2 }
+                        NavButton { text: "数据存储"; index: 3 }
+                        NavButton { text: "彩蛋"; index: 4 }
+                        Item { Layout.fillHeight: true }
                     }
+                }
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.topMargin: 24
-                        spacing: 8
+                StackLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    currentIndex: root.activeIndex
 
-                        D.Label {
-                            text: "作者：布球人-黑桃老K"
-                            color: root.mutedColor
-                            font.pixelSize: 13
-                        }
-
-                        D.Label {
-                            text: "版本号：V1.0.0 / Qt+QML"
-                            color: root.mutedColor
-                            font.pixelSize: 13
-                        }
-                    }
+                    MainWindowStylePage {}
+                    DesktopTodoStylePage {}
+                    AiSummaryPage {}
+                    DataStoragePage {}
+                    EasterEggPage {}
                 }
             }
         }
     }
 
-    component SettingsRow: Item {
-        id: settingsRowRoot
-        Layout.fillWidth: true
-        Layout.preferredHeight: 58
+    Timer {
+        id: toastTimer
+        interval: 1600
+        onTriggered: root.toastMessage = ""
+    }
 
-        property string title: ""
-        property string desc: ""
-        property Component control
+    Rectangle {
+        z: 20
+        width: Math.min(360, toastText.implicitWidth + 36)
+        height: 38
+        radius: 19
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 28
+        visible: root.toastMessage.length > 0
+        opacity: visible ? 1 : 0
+        color: root.lightTheme ? Qt.rgba(0.08, 0.09, 0.10, 0.88) : Qt.rgba(0.96, 0.96, 0.96, 0.92)
 
-        Column {
-            anchors.left: parent.left
-            anchors.right: rowControlLoader.left
-            anchors.rightMargin: 16
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 3
-
-            D.Label {
-                text: settingsRowRoot.title
-                color: root.textColor
-                font.pixelSize: 13
-                elide: Text.ElideRight
-            }
-
-            D.Label {
-                text: settingsRowRoot.desc
-                color: root.mutedColor
-                font.pixelSize: 11
-                elide: Text.ElideRight
-            }
+        D.Label {
+            id: toastText
+            anchors.centerIn: parent
+            text: root.toastMessage
+            color: root.lightTheme ? "#ffffff" : "#222222"
+            font.pixelSize: 13
+            elide: Text.ElideRight
+            width: parent.width - 24
+            horizontalAlignment: Text.AlignHCenter
         }
 
-        Loader {
-            id: rowControlLoader
-            width: item ? item.implicitWidth : 0
-            height: item ? item.implicitHeight : 0
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            sourceComponent: settingsRowRoot.control
-        }
-
-        Rectangle {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 1
-            color: root.rowLine
-        }
+        Behavior on opacity { NumberAnimation { duration: 140 } }
     }
 
     component HeaderToolButton: QQC.ToolButton {
@@ -318,173 +230,693 @@ Item {
         }
 
         background: Rectangle {
-            radius: 4
-            color: headerButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.05) : Qt.rgba(1, 1, 1, 0.08)) : "transparent"
+            radius: 6
+            color: headerButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.08)) : "transparent"
         }
     }
 
-    component CompactComboBox: QQC.Button {
-        id: combo
-        property var values: []
-        property int currentIndex: -1
-        signal activated(int index)
-
-        implicitWidth: 90
-        implicitHeight: 32
-        font.pixelSize: 13
+    component NavButton: QQC.Button {
+        id: navButton
+        property int index: 0
+        Layout.fillWidth: true
+        Layout.preferredHeight: 38
         hoverEnabled: true
-        padding: 0
-        leftPadding: 0
-        rightPadding: 0
-        topPadding: 0
-        bottomPadding: 0
-        onClicked: comboPopup.open()
+        onClicked: root.activeIndex = index
 
-        contentItem: Item {
-            implicitWidth: combo.implicitWidth
-            implicitHeight: combo.implicitHeight
-            clip: false
-
-            Text {
-                x: 10
-                y: 0
-                width: Math.max(0, combo.width - 36)
-                height: combo.height
-                text: combo.currentIndex >= 0 && combo.currentIndex < combo.values.length ? combo.values[combo.currentIndex] : ""
-                color: root.textColor
-                font.pixelSize: 13
-                font.weight: Font.Medium
-                verticalAlignment: Text.AlignVCenter
-                clip: false
-                elide: Text.ElideRight
-            }
-
-            Image {
-                width: 16
-                height: 16
-                x: combo.width - 23
-                anchors.verticalCenter: parent.verticalCenter
-                source: "qrc:/assets/chevron-down-" + (root.lightTheme ? "dark" : "light") + ".svg"
-                sourceSize.width: 16
-                sourceSize.height: 16
-                opacity: 0.78
-            }
+        contentItem: D.Label {
+            text: navButton.text
+            color: root.activeIndex === navButton.index ? "#ffffff" : root.textColor
+            font.pixelSize: 13
+            font.weight: root.activeIndex === navButton.index ? Font.DemiBold : Font.Normal
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
         }
 
         background: Rectangle {
             radius: 8
-            color: combo.hovered || comboPopup.visible ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.12)) : root.controlBase
-            border.width: 1
-            border.color: combo.hovered || comboPopup.visible ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.15) : Qt.rgba(1, 1, 1, 0.20)) : root.controlBorder
+            color: root.activeIndex === navButton.index
+                ? root.accentColor
+                : navButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.05) : Qt.rgba(1, 1, 1, 0.07)) : "transparent"
+        }
+    }
+
+    component PageShell: Flickable {
+        id: page
+        clip: true
+        contentWidth: width
+        contentHeight: pageColumn.implicitHeight + 4
+
+        default property alias content: pageColumn.data
+
+        ColumnLayout {
+            id: pageColumn
+            width: Math.max(0, page.width)
+            spacing: 12
+        }
+    }
+
+    component PageTitle: ColumnLayout {
+        id: titleRoot
+        property string title: ""
+        property string desc: ""
+        Layout.fillWidth: true
+        spacing: 4
+
+        D.Label {
+            Layout.fillWidth: true
+            text: titleRoot.title
+            color: root.textColor
+            font.pixelSize: 20
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
 
-        QQC.Popup {
-            id: comboPopup
-            y: combo.height - 1
+        D.Label {
+            Layout.fillWidth: true
+            text: titleRoot.desc
+            color: root.mutedColor
+            font.pixelSize: 12
+            wrapMode: Text.WordWrap
+        }
+    }
+
+    component SectionCard: Rectangle {
+        id: card
+        default property alias content: cardColumn.data
+        Layout.fillWidth: true
+        implicitHeight: cardColumn.implicitHeight + 24
+        radius: 10
+        color: root.panelColor
+        border.width: 1
+        border.color: root.borderColor
+
+        ColumnLayout {
+            id: cardColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 12
+            spacing: 0
+        }
+    }
+
+    component SettingRow: Item {
+        id: row
+        property string title: ""
+        property string desc: ""
+        property Component control
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.max(64, controlLoader.item ? controlLoader.item.implicitHeight + 18 : 64)
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: controlLoader.left
+            anchors.rightMargin: 18
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 4
+
+            D.Label {
+                width: parent.width
+                text: row.title
+                color: root.textColor
+                font.pixelSize: 13
+                elide: Text.ElideRight
+            }
+
+            D.Label {
+                width: parent.width
+                text: row.desc
+                color: root.mutedColor
+                font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+        }
+
+        Loader {
+            id: controlLoader
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: item ? item.implicitWidth : 0
+            height: item ? item.implicitHeight : 0
+            sourceComponent: row.control
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: root.rowLine
+        }
+    }
+
+    component AlphaRow: RowLayout {
+        id: alphaRow
+        property string label: ""
+        property string keyName: ""
+        property real settingValue: 0
+        Layout.fillWidth: true
+        implicitWidth: 430
+        implicitHeight: 32
+        spacing: 10
+
+        D.Label {
+            Layout.preferredWidth: 92
+            text: alphaRow.label
+            color: root.textColor
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
+        QQC.Slider {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 28
+            from: 0
+            to: 0.6
+            stepSize: 0.005
+            value: alphaRow.settingValue
+            live: true
+            onMoved: root.setAlpha(alphaRow.keyName, value)
+        }
+
+        D.Label {
+            Layout.preferredWidth: 48
+            text: root.formatAlpha(alphaRow.settingValue)
+            color: root.mutedColor
+            font.pixelSize: 12
+            horizontalAlignment: Text.AlignRight
+        }
+    }
+
+    component AlphaGroup: ColumnLayout {
+        id: alphaGroup
+        property string title: ""
+        default property alias content: alphaGroupRows.data
+        Layout.fillWidth: true
+        spacing: 8
+
+        D.Label {
+            Layout.fillWidth: true
+            text: alphaGroup.title
+            color: root.textColor
+            font.pixelSize: 13
+            font.weight: Font.Medium
+            elide: Text.ElideRight
+        }
+
+        ColumnLayout {
+            id: alphaGroupRows
+            Layout.fillWidth: true
+            spacing: 4
+        }
+    }
+
+    component CompactComboBox: QQC.ComboBox {
+        id: combo
+        implicitWidth: 136
+        implicitHeight: 34
+        font.pixelSize: 13
+        hoverEnabled: true
+
+        function optionText(optionIndex) {
+            if (combo.model && combo.model[optionIndex] !== undefined) {
+                return String(combo.model[optionIndex])
+            }
+            return combo.textAt(optionIndex)
+        }
+
+        contentItem: D.Label {
+            leftPadding: 12
+            rightPadding: 28
+            text: combo.displayText
+            color: root.textColor
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+
+        indicator: Image {
+            width: 16
+            height: 16
+            x: combo.width - 24
+            y: Math.round((combo.height - height) / 2)
+            source: "qrc:/assets/chevron-down-" + (root.lightTheme ? "dark" : "light") + ".svg"
+            sourceSize.width: 16
+            sourceSize.height: 16
+            opacity: 0.70
+        }
+
+        background: Rectangle {
+            radius: 8
+            color: combo.hovered || combo.popup.visible ? (root.lightTheme ? "#e9eaec" : "#3b3c40") : root.controlBase
+            border.width: 1
+            border.color: combo.activeFocus ? root.accentColor : root.borderColor
+        }
+
+        popup: QQC.Popup {
+            y: combo.height + 4
             width: combo.width
-            implicitHeight: menuColumn.implicitHeight
-            padding: 0
-            focus: true
-            closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutsideParent
+            implicitHeight: Math.min(contentItem.implicitHeight + 8, 160)
+            padding: 4
 
-            contentItem: Column {
-                id: menuColumn
-                width: combo.width
+            contentItem: ListView {
+                clip: true
+                implicitHeight: contentHeight
+                model: combo.model
+                currentIndex: combo.currentIndex
 
-                Repeater {
-                    model: combo.values
+                delegate: QQC.ItemDelegate {
+                    id: popupDelegate
+                    width: combo.popup.width - combo.popup.leftPadding - combo.popup.rightPadding
+                    height: 36
+                    hoverEnabled: true
+                    onClicked: {
+                        combo.currentIndex = index
+                        combo.popup.close()
+                        combo.activated(index)
+                    }
 
-                    QQC.ItemDelegate {
-                        id: menuItem
-                        width: combo.width
-                        height: 32
-                        hoverEnabled: true
-                        onClicked: {
-                            combo.currentIndex = index
-                            comboPopup.close()
-                            combo.activated(index)
+                    contentItem: RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 10
+                        spacing: 8
+
+                        D.Label {
+                            Layout.preferredWidth: 16
+                            text: combo.currentIndex === index ? "✓" : ""
+                            color: root.textColor
+                            font.pixelSize: 14
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
                         }
 
-                        contentItem: Text {
-                            x: 10
-                            width: Math.max(0, parent.width - 20)
-                            height: parent.height
-                            text: modelData
+                        D.Label {
+                            Layout.fillWidth: true
+                            text: combo.optionText(index)
                             color: root.textColor
                             font.pixelSize: 13
                             verticalAlignment: Text.AlignVCenter
                             elide: Text.ElideRight
                         }
+                    }
 
-                        background: Rectangle {
-                            color: menuItem.hovered || combo.currentIndex === index ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.14)) : "transparent"
-                        }
+                    background: Rectangle {
+                        radius: 6
+                        color: popupDelegate.hovered || combo.currentIndex === index
+                            ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.08))
+                            : "transparent"
                     }
                 }
             }
 
             background: Rectangle {
                 radius: 8
-                color: root.lightTheme ? Qt.rgba(0.94, 0.94, 0.94, 0.98) : Qt.rgba(0.20, 0.20, 0.20, 0.98)
+                color: root.panelColor
                 border.width: 1
                 border.color: root.borderColor
             }
         }
     }
 
-    component CompactTextField: QQC.TextField {
+    component ReadOnlyField: QQC.TextField {
         id: field
-        font.pixelSize: 13
-        color: root.controlText
-        placeholderTextColor: root.mutedColor
-        leftPadding: 12
-        rightPadding: 30
-        verticalAlignment: Text.AlignVCenter
+        implicitHeight: 34
+        readOnly: true
         selectByMouse: true
-        horizontalAlignment: Text.AlignLeft
-        cursorPosition: 0
-
+        color: root.textColor
+        font.pixelSize: 12
+        leftPadding: 12
+        rightPadding: 12
         background: Rectangle {
-            radius: 6
+            radius: 8
             color: root.controlBase
             border.width: 1
-            border.color: field.activeFocus ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.30) : Qt.rgba(1, 1, 1, 0.30)) : root.borderColor
+            border.color: root.borderColor
         }
     }
 
-    component CompactDataButton: QQC.Button {
+    component DataButton: D.Button {
         id: dataButton
-        property string iconName: ""
-        hoverEnabled: true
-        font.pixelSize: 13
+        property string assetName: ""
+        implicitHeight: 36
+        icon.name: ""
 
         contentItem: Row {
-            spacing: 8
+            spacing: 7
             anchors.centerIn: parent
 
             Image {
                 width: 16
                 height: 16
                 anchors.verticalCenter: parent.verticalCenter
-                source: "qrc:/assets/" + dataButton.iconName + "-" + (root.lightTheme ? "dark" : "light") + ".svg"
+                source: "qrc:/assets/" + dataButton.assetName + "-" + (root.lightTheme ? "dark" : "light") + ".svg"
                 sourceSize.width: 16
                 sourceSize.height: 16
-                visible: dataButton.iconName.length > 0
+                visible: dataButton.assetName.length > 0
+                opacity: 0.82
             }
 
             D.Label {
                 text: dataButton.text
-                color: root.controlText
+                color: root.textColor
                 font.pixelSize: 13
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
+    }
+
+    component LinkButton: QQC.Button {
+        id: linkButton
+        implicitWidth: 42
+        implicitHeight: 34
+        hoverEnabled: true
+        background: Item {}
+
+        contentItem: D.Label {
+            text: linkButton.text
+            color: linkButton.hovered ? Qt.darker(root.accentColor, 1.12) : root.accentColor
+            font.pixelSize: 13
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignHCenter
+        }
+    }
+
+    component ScopeTab: QQC.Button {
+        id: tab
+        property string scope: "note"
+        implicitWidth: 74
+        implicitHeight: 32
+        hoverEnabled: true
+        onClicked: root.loadAiTemplate(scope)
+
+        contentItem: D.Label {
+            text: tab.text
+            color: root.aiScope === tab.scope ? "#ffffff" : root.textColor
+            font.pixelSize: 13
+            font.weight: root.aiScope === tab.scope ? Font.DemiBold : Font.Normal
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
 
         background: Rectangle {
             radius: 8
-            color: dataButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.15)) : root.controlBase
-            border.width: 1
-            border.color: dataButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.20) : Qt.rgba(1, 1, 1, 0.25)) : root.controlBorder
+            color: root.aiScope === tab.scope
+                ? root.accentColor
+                : tab.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.08)) : "transparent"
+        }
+    }
+
+    component MainWindowStylePage: PageShell {
+        PageTitle {
+            title: "主窗口样式"
+            desc: "调整主窗口右侧待办条目的底色透明度。"
+        }
+
+        SectionCard {
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                D.Label {
+                    Layout.fillWidth: true
+                    text: "待办底色透明度"
+                    color: root.textColor
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+
+                D.Button {
+                    Layout.preferredWidth: 92
+                    Layout.preferredHeight: 32
+                    text: "恢复默认"
+                    onClicked: root.resetMainWindowAlpha()
+                }
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                text: "分别控制浅色/深色模式下默认和优先级待办底色。"
+                color: root.mutedColor
+                font.pixelSize: 12
+                elide: Text.ElideRight
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 16
+                spacing: 14
+
+                AlphaGroup {
+                    title: "浅色主题透明度调节"
+                    AlphaRow { label: "默认优先级"; keyName: "mainDefaultTodoAlphaLight"; settingValue: app.mainDefaultTodoAlphaLight }
+                    AlphaRow { label: "其它优先级"; keyName: "mainPriorityTodoAlphaLight"; settingValue: app.mainPriorityTodoAlphaLight }
+                }
+
+                AlphaGroup {
+                    title: "深色主题透明度调节"
+                    AlphaRow { label: "默认优先级"; keyName: "mainDefaultTodoAlphaDark"; settingValue: app.mainDefaultTodoAlphaDark }
+                    AlphaRow { label: "其它优先级"; keyName: "mainPriorityTodoAlphaDark"; settingValue: app.mainPriorityTodoAlphaDark }
+                }
+            }
+        }
+    }
+
+    component DesktopTodoStylePage: PageShell {
+        PageTitle {
+            title: "桌面待办样式"
+            desc: "控制桌面便签窗口的颜色、透明度和优先级显示方式。"
+        }
+
+        SectionCard {
+            SettingRow {
+                title: "待办窗口颜色"
+                desc: "选择桌面待办窗口外观，或跟随主窗口主题"
+                control: CompactComboBox {
+                    model: ["跟随系统", "黑色", "白色"]
+                    currentIndex: app.noteTheme === "system" ? 0 : app.noteTheme === "light" ? 2 : 1
+                    onActivated: function(index) {
+                        app.updateSetting("noteTheme", index === 0 ? "system" : index === 2 ? "light" : "dark")
+                        root.notify("待办窗口颜色已更新")
+                    }
+                }
+            }
+
+            SettingRow {
+                title: "待办窗口透明度"
+                desc: "调整桌面便签窗口整体透明度"
+                control: RowLayout {
+                    implicitWidth: 230
+                    implicitHeight: 34
+                    spacing: 10
+
+                    QQC.Slider {
+                        Layout.preferredWidth: 168
+                        Layout.preferredHeight: 28
+                        Layout.alignment: Qt.AlignVCenter
+                        from: 0
+                        to: 100
+                        stepSize: 1
+                        value: app.opacity
+                        live: true
+                        onMoved: app.updateSetting("opacity", Math.round(value))
+                    }
+
+                    D.Label {
+                        Layout.preferredWidth: 44
+                        Layout.preferredHeight: 28
+                        Layout.alignment: Qt.AlignVCenter
+                        text: app.opacity + "%"
+                        color: root.textColor
+                        font.pixelSize: 13
+                        horizontalAlignment: Text.AlignRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
+
+            SettingRow {
+                title: "优先级样式"
+                desc: "多彩模式显示彩色底色，简约模式只保留线性提示"
+                control: CompactComboBox {
+                    model: ["多彩", "简约"]
+                    currentIndex: app.priorityStyle === "simple" ? 1 : 0
+                    onActivated: function(index) {
+                        app.updateSetting("priorityStyle", index === 1 ? "simple" : "colorful")
+                        root.notify("设置已保存")
+                    }
+                }
+            }
+        }
+    }
+
+    component AiSummaryPage: PageShell {
+        PageTitle {
+            title: "AI总结"
+            desc: "分别维护本条、本周、本月总结提示词。保存后总结入口会使用对应模板。"
+        }
+
+        SectionCard {
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 12
+                spacing: 6
+
+                ScopeTab { scope: "note"; text: "本条" }
+                ScopeTab { scope: "week"; text: "本周" }
+                ScopeTab { scope: "month"; text: "本月" }
+                Item { Layout.fillWidth: true }
+            }
+
+            QQC.TextArea {
+                id: promptEdit
+                Layout.fillWidth: true
+                Layout.preferredHeight: 230
+                text: root.aiTemplateDraft
+                wrapMode: TextEdit.Wrap
+                selectByMouse: true
+                color: root.textColor
+                selectedTextColor: "#ffffff"
+                selectionColor: root.accentColor
+                font.pixelSize: 13
+                leftPadding: 12
+                rightPadding: 12
+                topPadding: 10
+                bottomPadding: 10
+                onTextChanged: {
+                    if (text !== root.aiTemplateDraft) {
+                        root.aiTemplateDraft = text
+                        root.aiDirty = true
+                    }
+                }
+
+                background: Rectangle {
+                    radius: 8
+                    color: root.controlBase
+                    border.width: 1
+                    border.color: promptEdit.activeFocus ? root.accentColor : root.borderColor
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 14
+                spacing: 10
+
+                Item { Layout.fillWidth: true }
+
+                D.Button {
+                    text: "恢复默认"
+                    onClicked: {
+                        app.resetSummaryTemplate(root.aiScope)
+                        root.loadAiTemplate(root.aiScope)
+                        root.notify(root.aiScopeName(root.aiScope) + "提示词已恢复默认")
+                    }
+                }
+
+                D.Button {
+                    text: "取消"
+                    onClicked: root.loadAiTemplate(root.aiScope)
+                }
+
+                D.Button {
+                    text: "保存"
+                    highlighted: true
+                    onClicked: {
+                        app.setSummaryTemplate(root.aiScope, root.aiTemplateDraft)
+                        root.aiDirty = false
+                        root.notify(root.aiScopeName(root.aiScope) + "提示词已保存")
+                    }
+                }
+            }
+        }
+    }
+
+    component DataStoragePage: PageShell {
+        PageTitle {
+            title: "数据存储"
+            desc: "查看本机永久存储路径，并导入或导出全部待办数据。"
+        }
+
+        SectionCard {
+            SettingRow {
+                title: "存储路径"
+                desc: "当前数据文件所在位置"
+                control: RowLayout {
+                    implicitWidth: 386
+                    implicitHeight: 34
+                    spacing: 10
+
+                    ReadOnlyField {
+                        Layout.preferredWidth: 330
+                        text: app.storagePath
+                    }
+
+                    LinkButton {
+                        text: "打开"
+                        onClicked: root.notify(app.openStoragePath())
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                spacing: 12
+
+                DataButton {
+                    Layout.preferredWidth: 128
+                    text: "导出数据"
+                    assetName: "data-export"
+                    onClicked: root.notify(app.exportData())
+                }
+
+                DataButton {
+                    Layout.preferredWidth: 128
+                    text: "导入数据"
+                    assetName: "data-import"
+                    onClicked: root.notify(app.importData())
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
+                text: "导出文件包含 notes.json、events.json 和 settings.json；导入后会刷新当前窗口。"
+                color: root.mutedColor
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
+    component EasterEggPage: Item {
+        ColumnLayout {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 80, 420)
+            spacing: 14
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "阿弥陀佛，算法自然"
+                color: root.textColor
+                font.pixelSize: 28
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "愿今日待办有序。"
+                color: root.mutedColor
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignHCenter
+            }
         }
     }
 }

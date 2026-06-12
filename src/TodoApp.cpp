@@ -8,6 +8,7 @@
 #include <QCoreApplication>
 #include <QDate>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -27,6 +28,7 @@
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QUrl>
 #include <QWindow>
 #include <DAboutDialog>
 #include <DGuiApplicationHelper>
@@ -45,6 +47,27 @@ QString valueString(const QJsonObject &object, const QString &key, const QString
     return object.value(key).toVariant().toString().isEmpty()
         ? fallback
         : object.value(key).toVariant().toString();
+}
+
+double numberSetting(const QJsonObject &settings, const QString &key, double fallback)
+{
+    bool ok = false;
+    const double value = settings.value(key).toVariant().toDouble(&ok);
+    if (!ok) {
+        return fallback;
+    }
+    return qBound(0.0, value, 1.0);
+}
+
+QString summaryTemplateKey(const QString &scope)
+{
+    if (scope == QStringLiteral("week")) {
+        return QStringLiteral("weekSummaryTemplate");
+    }
+    if (scope == QStringLiteral("month")) {
+        return QStringLiteral("monthSummaryTemplate");
+    }
+    return QStringLiteral("noteSummaryTemplate");
 }
 
 QString normalizedWindowLayer(const QString &layer)
@@ -196,6 +219,10 @@ TodoApp::TodoApp(QObject *parent)
     m_settings.insert(QStringLiteral("priorityStyle"), QStringLiteral("colorful"));
     m_settings.insert(QStringLiteral("opacity"), 60);
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    m_settings.insert(QStringLiteral("mainDefaultTodoAlphaLight"), 0.445);
+    m_settings.insert(QStringLiteral("mainPriorityTodoAlphaLight"), 0.275);
+    m_settings.insert(QStringLiteral("mainDefaultTodoAlphaDark"), 0.13);
+    m_settings.insert(QStringLiteral("mainPriorityTodoAlphaDark"), 0.21);
 }
 
 TodoApp::~TodoApp()
@@ -317,6 +344,10 @@ QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("not
 QString TodoApp::priorityStyle() const { return m_settings.value(QStringLiteral("priorityStyle")).toString(QStringLiteral("colorful")); }
 int TodoApp::opacity() const { return m_settings.value(QStringLiteral("opacity")).toInt(60); }
 QString TodoApp::storagePath() const { return m_dataDir; }
+double TodoApp::mainDefaultTodoAlphaLight() const { return numberSetting(m_settings, QStringLiteral("mainDefaultTodoAlphaLight"), 0.445); }
+double TodoApp::mainPriorityTodoAlphaLight() const { return numberSetting(m_settings, QStringLiteral("mainPriorityTodoAlphaLight"), 0.275); }
+double TodoApp::mainDefaultTodoAlphaDark() const { return numberSetting(m_settings, QStringLiteral("mainDefaultTodoAlphaDark"), 0.13); }
+double TodoApp::mainPriorityTodoAlphaDark() const { return numberSetting(m_settings, QStringLiteral("mainPriorityTodoAlphaDark"), 0.21); }
 
 void TodoApp::syncDtkPalette()
 {
@@ -372,6 +403,37 @@ void TodoApp::setNoteSummaryTemplate(const QString &summaryTemplate)
 {
     const QString trimmed = summaryTemplate.trimmed();
     m_settings.insert(QStringLiteral("noteSummaryTemplate"), trimmed.isEmpty() ? defaultNoteSummaryTemplate() : summaryTemplate);
+    saveSettings();
+    emit settingsChanged();
+}
+
+QString TodoApp::summaryTemplate(const QString &scope) const
+{
+    return m_settings.value(summaryTemplateKey(scope)).toString(defaultSummaryTemplate(scope));
+}
+
+QString TodoApp::defaultSummaryTemplate(const QString &scope) const
+{
+    if (scope == QStringLiteral("week")) {
+        return defaultWeekSummaryTemplate();
+    }
+    if (scope == QStringLiteral("month")) {
+        return defaultMonthSummaryTemplate();
+    }
+    return defaultNoteSummaryTemplate();
+}
+
+void TodoApp::setSummaryTemplate(const QString &scope, const QString &summaryTemplate)
+{
+    const QString trimmed = summaryTemplate.trimmed();
+    m_settings.insert(summaryTemplateKey(scope), trimmed.isEmpty() ? defaultSummaryTemplate(scope) : summaryTemplate);
+    saveSettings();
+    emit settingsChanged();
+}
+
+void TodoApp::resetSummaryTemplate(const QString &scope)
+{
+    m_settings.insert(summaryTemplateKey(scope), defaultSummaryTemplate(scope));
     saveSettings();
     emit settingsChanged();
 }
@@ -795,11 +857,13 @@ void TodoApp::showSettingsWindow()
         m_settingsView->requestActivate();
         return;
     }
-    m_settingsView = createView(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")), QSize(480, 430), QSize(420, 360), true, false);
+    m_settingsView = createView(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")), QSize(760, 560), QSize(680, 500), true, false);
     m_settingsView->rootContext()->setContextProperty(QStringLiteral("app"), this);
     m_settingsView->setSource(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")));
     connect(m_settingsView, &QObject::destroyed, this, [this]() { m_settingsView = nullptr; });
     m_settingsView->show();
+    m_settingsView->raise();
+    m_settingsView->requestActivate();
 }
 
 void TodoApp::showAboutDialog()
@@ -900,6 +964,15 @@ QString TodoApp::importData()
     emit settingsChanged();
     refreshNoteControllers();
     return QStringLiteral("数据导入成功");
+}
+
+QString TodoApp::openStoragePath()
+{
+    QDir().mkpath(m_dataDir);
+    if (QDesktopServices::openUrl(QUrl::fromLocalFile(m_dataDir))) {
+        return QStringLiteral("已打开存储路径");
+    }
+    return QStringLiteral("无法打开存储路径");
 }
 
 QString TodoApp::summarizeAllNotes()
@@ -1210,6 +1283,26 @@ QString TodoApp::defaultNoteSummaryTemplate() const
                           "4. 下一步建议");
 }
 
+QString TodoApp::defaultWeekSummaryTemplate() const
+{
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本周所有待办。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 本周重点\n"
+                          "2. 已完成进展\n"
+                          "3. 未完成事项与风险\n"
+                          "4. 下周行动建议");
+}
+
+QString TodoApp::defaultMonthSummaryTemplate() const
+{
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本月所有待办。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 本月重点成果\n"
+                          "2. 事项推进情况\n"
+                          "3. 长期未完成事项\n"
+                          "4. 下月优化建议");
+}
+
 QString TodoApp::buildCurrentNoteSummaryPrompt(const QJsonObject &note) const
 {
     QStringList lines;
@@ -1260,19 +1353,16 @@ QString TodoApp::buildAllNotesSummaryPrompt() const
     };
 
     QStringList lines;
-    lines << QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据，总结本周和本月所有待办。")
-          << QString()
-          << QStringLiteral("请按以下结构输出，语言简洁、具体，不要编造未出现的信息：")
-          << QStringLiteral("1. 本周总结")
-          << QStringLiteral("2. 本月总结")
-          << QStringLiteral("3. 未完成事项归纳")
-          << QStringLiteral("4. 下周/后续行动建议")
+    lines << summaryTemplate(QStringLiteral("week"))
           << QString()
           << QStringLiteral("当前时间：%1").arg(now.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
           << QString()
           << QStringLiteral("【本周待办】");
     appendNotes(lines, m_notes, weekStart, QStringLiteral("本周暂无待办数据。"));
-    lines << QString() << QStringLiteral("【本月待办】");
+    lines << QString()
+          << summaryTemplate(QStringLiteral("month"))
+          << QString()
+          << QStringLiteral("【本月待办】");
     appendNotes(lines, m_notes, monthStart, QStringLiteral("本月暂无待办数据。"));
     return lines.join(QLatin1Char('\n'));
 }

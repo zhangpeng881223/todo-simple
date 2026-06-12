@@ -26,6 +26,10 @@ class TodoApp : public QObject
     Q_PROPERTY(QString priorityStyle READ priorityStyle NOTIFY settingsChanged)
     Q_PROPERTY(int opacity READ opacity NOTIFY settingsChanged)
     Q_PROPERTY(QString storagePath READ storagePath CONSTANT)
+    Q_PROPERTY(double mainDefaultTodoAlphaLight READ mainDefaultTodoAlphaLight NOTIFY settingsChanged)
+    Q_PROPERTY(double mainPriorityTodoAlphaLight READ mainPriorityTodoAlphaLight NOTIFY settingsChanged)
+    Q_PROPERTY(double mainDefaultTodoAlphaDark READ mainDefaultTodoAlphaDark NOTIFY settingsChanged)
+    Q_PROPERTY(double mainPriorityTodoAlphaDark READ mainPriorityTodoAlphaDark NOTIFY settingsChanged)
 
 public:
     explicit TodoApp(QObject *parent = nullptr);
@@ -40,6 +44,10 @@ public:
     QString priorityStyle() const;
     int opacity() const;
     QString storagePath() const;
+    double mainDefaultTodoAlphaLight() const;
+    double mainPriorityTodoAlphaLight() const;
+    double mainDefaultTodoAlphaDark() const;
+    double mainPriorityTodoAlphaDark() const;
     QString noteSummaryTemplate() const;
     void setNoteSummaryTemplate(const QString &summaryTemplate);
     QString noteWindowLayer(const QString &noteId) const;
@@ -71,7 +79,12 @@ public:
     Q_INVOKABLE void updateSetting(const QString &key, const QVariant &value);
     Q_INVOKABLE QString exportData();
     Q_INVOKABLE QString importData();
+    Q_INVOKABLE QString openStoragePath();
     Q_INVOKABLE QString summarizeAllNotes();
+    Q_INVOKABLE QString summaryTemplate(const QString &scope) const;
+    Q_INVOKABLE QString defaultSummaryTemplate(const QString &scope) const;
+    Q_INVOKABLE void setSummaryTemplate(const QString &scope, const QString &summaryTemplate);
+    Q_INVOKABLE void resetSummaryTemplate(const QString &scope);
     Q_INVOKABLE QVariantMap eventById(const QString &eventId) const;
     Q_INVOKABLE void saveEvent(const QVariantMap &event);
     Q_INVOKABLE void deleteEvent(const QString &eventId);
@@ -97,6 +110,8 @@ private:
     QPoint defaultNotePosition(int xOffset = 20, int y = 20) const;
     QString sendPromptToUosAi(const QString &prompt) const;
     QString defaultNoteSummaryTemplate() const;
+    QString defaultWeekSummaryTemplate() const;
+    QString defaultMonthSummaryTemplate() const;
     QString buildCurrentNoteSummaryPrompt(const QJsonObject &note) const;
     QString buildAllNotesSummaryPrompt() const;
     QString dataFilePath(const QString &name) const;
