@@ -16,6 +16,7 @@ class NoteController : public QObject
     Q_PROPERTY(int completedCount READ completedCount NOTIFY noteChanged)
     Q_PROPERTY(int totalCount READ totalCount NOTIFY noteChanged)
     Q_PROPERTY(QString summaryTemplate READ summaryTemplate WRITE setSummaryTemplate NOTIFY summaryTemplateChanged)
+    Q_PROPERTY(QString windowLayer READ windowLayer NOTIFY noteChanged)
 
 public:
     NoteController(TodoApp *app, const QString &noteId, QObject *parent = nullptr);
@@ -29,6 +30,7 @@ public:
     int totalCount() const;
     QString summaryTemplate() const;
     void setSummaryTemplate(const QString &summaryTemplate);
+    QString windowLayer() const;
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE QString addTodo(int afterIndex = -1);
@@ -42,6 +44,7 @@ public:
     Q_INVOKABLE void hide();
     Q_INVOKABLE QString summarizeToday();
     Q_INVOKABLE void resetSummaryTemplate();
+    Q_INVOKABLE void cycleWindowLayer();
 
 signals:
     void noteChanged();

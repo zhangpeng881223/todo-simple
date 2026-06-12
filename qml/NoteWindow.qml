@@ -47,9 +47,17 @@ Item {
         return text
     }
 
+    function windowLayerToast(layer) {
+        if (layer === "bottom") {
+            return "强制置底"
+        }
+        if (layer === "top") {
+            return "强制置顶"
+        }
+        return "默认显示层级"
+    }
+
     property int draggingIndex: -1
-    property bool summaryMenuOpen: false
-    property bool summaryMenuHovered: false
     property bool summaryTemplateDialogOpen: false
     property string summaryTemplateDraft: ""
     readonly property int rowDragStep: 36
@@ -221,8 +229,6 @@ Item {
     }
 
     function openSummaryTemplateDialog() {
-        summaryMenuOpen = false
-        summaryMenuHovered = false
         summaryTemplateDraft = noteController.summaryTemplate
         summaryTemplateDialogOpen = true
         Qt.callLater(function() {
@@ -239,15 +245,6 @@ Item {
         summaryTemplateWindow.y = Math.round((Screen.height - summaryTemplateWindow.height) / 2)
     }
 
-    function showSummaryMenu() {
-        summaryMenuHideTimer.stop()
-        summaryMenuOpen = true
-    }
-
-    function requestSummaryMenuHide() {
-        summaryMenuHideTimer.restart()
-    }
-
     Component.onCompleted: syncNoteTodos(true)
 
     Connections {
@@ -261,17 +258,6 @@ Item {
         id: noteTodosModel
     }
 
-    Timer {
-        id: summaryMenuHideTimer
-        interval: 180
-        repeat: false
-        onTriggered: {
-            if (!summaryButton.hovered && !root.summaryMenuHovered) {
-                root.summaryMenuOpen = false
-            }
-        }
-    }
-
     component HeaderButton: Item {
         id: buttonRoot
         width: 28
@@ -279,6 +265,8 @@ Item {
 
         signal clicked()
         property string kind: "plus"
+        property string tooltipText: ""
+        property bool tooltipRightAligned: false
         readonly property color hoverBackground: root.lightTheme ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.12)
         readonly property bool hovered: mouse.containsMouse
         readonly property string iconTone: root.lightTheme ? "dark" : "light"
@@ -304,42 +292,34 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 120 } }
         }
 
+        Rectangle {
+            z: 120
+            x: buttonRoot.tooltipRightAligned ? buttonRoot.width - width : (buttonRoot.width - width) / 2
+            y: buttonRoot.height - 1
+            width: tooltipLabel.implicitWidth + 18
+            height: 28
+            radius: 6
+            visible: buttonRoot.tooltipText.length > 0 && buttonRoot.hovered
+            color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.96) : Qt.rgba(45 / 255, 45 / 255, 45 / 255, 0.96)
+            border.width: 1
+            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.14)
+            opacity: visible ? 1 : 0
+
+            Text {
+                id: tooltipLabel
+                anchors.centerIn: parent
+                text: buttonRoot.tooltipText
+                color: root.textColor
+                font.pixelSize: 12
+            }
+        }
+
         MouseArea {
             id: mouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: buttonRoot.clicked()
-        }
-    }
-
-    component SummaryMenuItem: Rectangle {
-        id: menuItemRoot
-        width: parent ? parent.width : 152
-        height: 34
-        radius: 5
-        color: menuMouse.containsMouse
-               ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.10))
-               : "transparent"
-
-        signal clicked()
-        property string label: ""
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            text: menuItemRoot.label
-            color: root.textColor
-            font.pixelSize: 13
-        }
-
-        MouseArea {
-            id: menuMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: menuItemRoot.clicked()
         }
     }
 
@@ -466,20 +446,26 @@ Item {
                 HeaderButton {
                     id: summaryButton
                     kind: "ai"
-                    onHoveredChanged: {
-                        if (hovered) {
-                            root.showSummaryMenu()
-                        } else {
-                            root.requestSummaryMenuHide()
-                        }
-                    }
+                    tooltipText: "AI总结"
+                    onClicked: toast.show(noteController.summarizeToday())
                 }
                 HeaderButton {
                     kind: "plus"
+                    tooltipText: "新建待办"
                     onClicked: root.addTodo()
                 }
                 HeaderButton {
+                    kind: "layer-" + noteController.windowLayer
+                    tooltipText: "层级切换"
+                    onClicked: {
+                        noteController.cycleWindowLayer()
+                        toast.show(root.windowLayerToast(noteController.windowLayer))
+                    }
+                }
+                HeaderButton {
                     kind: "close"
+                    tooltipText: "关闭"
+                    tooltipRightAligned: true
                     onClicked: {
                         toast.show("便签已隐藏")
                         hideTimer.restart()
@@ -946,57 +932,6 @@ Item {
                     text: noteController.createdDateText
                     color: root.mutedColor
                     font.pixelSize: 11
-                }
-            }
-        }
-
-        Rectangle {
-            id: summaryMenu
-            z: 90
-            visible: root.summaryMenuOpen || summaryButton.hovered || root.summaryMenuHovered
-            x: Math.max(8, Math.min(parent.width - width - 8, parent.width - 154))
-            y: 38
-            width: 152
-            height: 76
-            radius: 8
-            color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.98) : Qt.rgba(48 / 255, 48 / 255, 48 / 255, 0.98)
-            border.width: 1
-            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.12)
-
-            MouseArea {
-                anchors.fill: parent
-                hoverEnabled: true
-                onContainsMouseChanged: {
-                    root.summaryMenuHovered = containsMouse
-                    if (containsMouse) {
-                        root.showSummaryMenu()
-                    } else {
-                        root.requestSummaryMenuHide()
-                    }
-                }
-            }
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: 4
-                spacing: 0
-
-                SummaryMenuItem {
-                    label: "总结本窗口内容"
-                    onClicked: {
-                        root.summaryMenuOpen = false
-                        root.summaryMenuHovered = false
-                        toast.show(noteController.summarizeToday())
-                    }
-                }
-
-                SummaryMenuItem {
-                    label: "调整总结模板"
-                    onClicked: {
-                        root.summaryMenuOpen = false
-                        root.summaryMenuHovered = false
-                        root.openSummaryTemplateDialog()
-                    }
                 }
             }
         }

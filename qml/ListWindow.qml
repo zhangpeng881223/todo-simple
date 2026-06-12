@@ -27,21 +27,27 @@ D.ApplicationWindow {
                                            && D.ApplicationHelper.themeType === D.ApplicationHelper.LightType)
     readonly property color windowColor: lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.36) : Qt.rgba(24 / 255, 25 / 255, 26 / 255, 0.34)
     readonly property color titlebarColor: windowColor
-    readonly property color sidebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.54) : "#222324"
-    readonly property color sidebarGlassBlend: lightTheme ? Qt.rgba(1, 1, 1, 0.52) : "#222324"
-    readonly property color sidebarGlassTop: lightTheme ? Qt.rgba(1, 1, 1, 0.74) : "#222324"
-    readonly property color sidebarGlassBottom: lightTheme ? Qt.rgba(244 / 255, 255 / 255, 238 / 255, 0.24) : "#222324"
-    readonly property color sidebarGlassBorder: lightTheme ? Qt.rgba(232 / 255, 238 / 255, 228 / 255, 0.52) : "transparent"
+    readonly property color sidebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.26)
+    readonly property color sidebarGlassBlend: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.22)
+    readonly property color sidebarGlassTop: lightTheme ? Qt.rgba(1, 1, 1, 0.52) : Qt.rgba(1, 1, 1, 0.08)
+    readonly property color sidebarGlassBottom: lightTheme ? Qt.rgba(244 / 255, 255 / 255, 238 / 255, 0.14) : Qt.rgba(1, 1, 1, 0.03)
+    readonly property color sidebarGlassBorder: lightTheme ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(1, 1, 1, 0.10)
     readonly property color detailColor: windowColor
-    readonly property color cardColor: lightTheme ? "#ffffff" : "#2b2c2e"
-    readonly property color cardHoverColor: lightTheme ? "#f0f0f0" : Qt.rgba(1, 1, 1, 0.16)
-    readonly property color todoRowHoverColor: lightTheme ? cardHoverColor : Qt.rgba(1, 1, 1, 0.05)
-    readonly property color lineColor: lightTheme ? Qt.rgba(0, 0, 0, 0.12) : "#3a3c3e"
+    readonly property color cardColor: lightTheme ? Qt.rgba(1, 1, 1, 0.42) : Qt.rgba(1, 1, 1, 0.055)
+    readonly property color cardHoverColor: lightTheme ? Qt.rgba(1, 1, 1, 0.56) : Qt.rgba(1, 1, 1, 0.09)
+    readonly property color todoRowHoverColor: cardHoverColor
+    readonly property color lineColor: lightTheme ? Qt.rgba(0, 0, 0, 0.085) : Qt.rgba(1, 1, 1, 0.105)
     readonly property color textColor: lightTheme ? "#252525" : "#f3f4f4"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.56) : "#9aa2a6"
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.34) : "#6f777b"
-    readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.16) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.24)
-    readonly property color selectedBorderColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.42) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.50)
+    readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.13) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.15)
+    readonly property color selectedBorderColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.28) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.24)
+    readonly property color glassControlColor: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.055)
+    readonly property color glassControlHoverColor: lightTheme ? Qt.rgba(1, 1, 1, 0.46) : Qt.rgba(1, 1, 1, 0.08)
+    readonly property color glassControlFocusColor: lightTheme ? Qt.rgba(1, 1, 1, 0.58) : Qt.rgba(1, 1, 1, 0.12)
+    readonly property color glassControlBorderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.075) : Qt.rgba(1, 1, 1, 0.105)
+    readonly property color glassControlHoverBorderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.105) : Qt.rgba(1, 1, 1, 0.145)
+    readonly property color glassControlFocusBorderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.14) : Qt.rgba(1, 1, 1, 0.18)
     readonly property color accentColor: "#ffb520"
     readonly property color redColor: "#ff5f58"
     readonly property color greenColor: "#28d764"
@@ -133,15 +139,15 @@ D.ApplicationWindow {
             return "transparent"
         }
         if (!lightTheme) {
-            if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 87 / 255, 0.08)
-            if (priority === "orange") return Qt.rgba(255 / 255, 189 / 255, 46 / 255, 0.08)
-            if (priority === "blue") return Qt.rgba(29 / 255, 140 / 255, 248 / 255, 0.08)
-            if (priority === "green") return Qt.rgba(40 / 255, 200 / 255, 64 / 255, 0.08)
+            if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 87 / 255, 0.065)
+            if (priority === "orange") return Qt.rgba(255 / 255, 189 / 255, 46 / 255, 0.065)
+            if (priority === "blue") return Qt.rgba(29 / 255, 140 / 255, 248 / 255, 0.065)
+            if (priority === "green") return Qt.rgba(40 / 255, 200 / 255, 64 / 255, 0.065)
         }
-        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 88 / 255, 0.12)
-        if (priority === "orange") return Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.12)
-        if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, 0.12)
-        if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, 0.12)
+        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 88 / 255, 0.095)
+        if (priority === "orange") return Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.095)
+        if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, 0.095)
+        if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, 0.095)
         return "transparent"
     }
 
@@ -435,14 +441,14 @@ D.ApplicationWindow {
                     variant: "frosted"
                     lightTheme: root.lightTheme
                     density: root.lightTheme ? 0.22 : 0.24
-                    tintOpacity: root.lightTheme ? 0.20 : 0.12
-                    edgeOpacity: root.lightTheme ? 0.54 : 0.16
-                    highlightOpacity: root.lightTheme ? 0.18 : 0.10
+                    tintOpacity: root.lightTheme ? 0.16 : 0.09
+                    edgeOpacity: root.lightTheme ? 0.34 : 0.12
+                    highlightOpacity: root.lightTheme ? 0.12 : 0.07
                     lensOpacity: root.lightTheme ? 0.04 : 0.04
                     chromaOpacity: 0
                     thicknessOpacity: 0
-                    blendColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.28)
-                    tintColor: root.lightTheme ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.24)
+                    blendColor: root.sidebarGlassBlend
+                    tintColor: root.sidebarColor
 
                     Rectangle {
                         id: productLogo
@@ -487,13 +493,13 @@ D.ApplicationWindow {
                                 anchors.rightMargin: 8
                                 height: 36
                                 radius: 100
-                                color: root.lightTheme
-                                       ? Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.72 : 0.52)
-                                       : Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.12 : 0.08)
+                                color: searchInput.activeFocus
+                                       ? root.glassControlFocusColor
+                                       : (searchHover.hovered ? root.glassControlHoverColor : root.glassControlColor)
                                 border.width: 1
-                                border.color: root.lightTheme
-                                              ? Qt.rgba(0, 0, 0, searchInput.activeFocus ? 0.16 : (searchHover.hovered ? 0.12 : 0.08))
-                                              : Qt.rgba(1, 1, 1, searchInput.activeFocus ? 0.20 : 0.12)
+                                border.color: searchInput.activeFocus
+                                              ? root.glassControlFocusBorderColor
+                                              : (searchHover.hovered ? root.glassControlHoverBorderColor : root.glassControlBorderColor)
                                 antialiasing: true
 
                                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -572,13 +578,13 @@ D.ApplicationWindow {
                                 }
                                 background: Rectangle {
                                     radius: 18
-                                    color: root.lightTheme
-                                           ? Qt.rgba(1, 1, 1, addNoteButton.pressed ? 0.78 : (addNoteButton.hovered ? 0.66 : 0.52))
-                                           : Qt.rgba(1, 1, 1, addNoteButton.pressed ? 0.16 : (addNoteButton.hovered ? 0.12 : 0.08))
+                                    color: addNoteButton.pressed
+                                           ? root.glassControlFocusColor
+                                           : (addNoteButton.hovered ? root.glassControlHoverColor : root.glassControlColor)
                                     border.width: 1
-                                    border.color: root.lightTheme
-                                                  ? Qt.rgba(0, 0, 0, addNoteButton.hovered ? 0.14 : 0.08)
-                                                  : Qt.rgba(1, 1, 1, addNoteButton.hovered ? 0.20 : 0.12)
+                                    border.color: addNoteButton.hovered
+                                                  ? root.glassControlHoverBorderColor
+                                                  : root.glassControlBorderColor
                                     antialiasing: true
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                     Behavior on border.color { ColorAnimation { duration: 120 } }
@@ -1445,13 +1451,13 @@ D.ApplicationWindow {
 	                        Layout.fillWidth: true
 	                        Layout.preferredHeight: 38
 	                        radius: 100
-	                        color: root.lightTheme
-	                               ? Qt.rgba(1, 1, 1, addTodoInput.activeFocus ? 0.72 : 0.52)
-	                               : Qt.rgba(1, 1, 1, addTodoInput.activeFocus ? 0.12 : 0.08)
+	                        color: addTodoInput.activeFocus
+	                               ? root.glassControlFocusColor
+	                               : (addTodoHover.hovered ? root.glassControlHoverColor : root.glassControlColor)
 	                        border.width: 1
-	                        border.color: root.lightTheme
-	                                      ? Qt.rgba(0, 0, 0, addTodoInput.activeFocus ? 0.16 : (addTodoHover.hovered ? 0.12 : 0.08))
-	                                      : Qt.rgba(1, 1, 1, addTodoInput.activeFocus ? 0.20 : 0.12)
+	                        border.color: addTodoInput.activeFocus
+	                                      ? root.glassControlFocusBorderColor
+	                                      : (addTodoHover.hovered ? root.glassControlHoverBorderColor : root.glassControlBorderColor)
 	                        antialiasing: true
 
 	                        Behavior on color { ColorAnimation { duration: 120 } }

@@ -42,6 +42,8 @@ public:
     QString storagePath() const;
     QString noteSummaryTemplate() const;
     void setNoteSummaryTemplate(const QString &summaryTemplate);
+    QString noteWindowLayer(const QString &noteId) const;
+    QString cycleNoteWindowLayer(const QString &noteId);
 
     QJsonObject noteById(const QString &noteId) const;
     void updateNote(const QString &noteId, const QJsonObject &patch);
@@ -88,6 +90,7 @@ private:
     void saveSettings() const;
     void ensureSeedData();
     void refreshNoteControllers(const QString &noteId = QString());
+    void applyNoteWindowLayer(const QString &noteId, bool activate);
     void syncDtkPalette();
     void syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType);
     QString generateDefaultNoteTitle() const;

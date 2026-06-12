@@ -47,6 +47,37 @@ QString valueString(const QJsonObject &object, const QString &key, const QString
         : object.value(key).toVariant().toString();
 }
 
+QString normalizedWindowLayer(const QString &layer)
+{
+    if (layer == QStringLiteral("bottom") || layer == QStringLiteral("top")) {
+        return layer;
+    }
+    return QStringLiteral("normal");
+}
+
+Qt::WindowFlags baseViewFlags(bool resizable)
+{
+    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint | Qt::WindowCloseButtonHint;
+    if (resizable) {
+        flags |= Qt::WindowMinMaxButtonsHint;
+    } else {
+        flags |= Qt::MSWindowsFixedSizeDialogHint;
+    }
+    return flags;
+}
+
+Qt::WindowFlags noteViewFlags(const QString &layer)
+{
+    Qt::WindowFlags flags = baseViewFlags(true);
+    const QString normalized = normalizedWindowLayer(layer);
+    if (normalized == QStringLiteral("bottom")) {
+        flags |= Qt::WindowStaysOnBottomHint;
+    } else if (normalized == QStringLiteral("top")) {
+        flags |= Qt::WindowStaysOnTopHint;
+    }
+    return flags;
+}
+
 QString todoText(const QJsonObject &todo)
 {
     return todo.value(QStringLiteral("text")).toString().trimmed();
@@ -345,6 +376,41 @@ void TodoApp::setNoteSummaryTemplate(const QString &summaryTemplate)
     emit settingsChanged();
 }
 
+QString TodoApp::noteWindowLayer(const QString &noteId) const
+{
+    return normalizedWindowLayer(noteById(noteId).value(QStringLiteral("windowLayer")).toString());
+}
+
+QString TodoApp::cycleNoteWindowLayer(const QString &noteId)
+{
+    if (noteId.isEmpty()) {
+        return QStringLiteral("normal");
+    }
+
+    const QString current = noteWindowLayer(noteId);
+    const QString next = current == QStringLiteral("normal")
+        ? QStringLiteral("bottom")
+        : current == QStringLiteral("bottom")
+            ? QStringLiteral("top")
+            : QStringLiteral("normal");
+
+    for (int i = 0; i < m_notes.size(); ++i) {
+        QJsonObject note = m_notes.at(i).toObject();
+        if (note.value(QStringLiteral("id")).toVariant().toString() != noteId) {
+            continue;
+        }
+        note.insert(QStringLiteral("windowLayer"), next);
+        m_notes.replace(i, note);
+        saveNotes();
+        emit notesChanged();
+        refreshNoteControllers(noteId);
+        applyNoteWindowLayer(noteId, true);
+        return next;
+    }
+
+    return QStringLiteral("normal");
+}
+
 QJsonObject TodoApp::noteById(const QString &noteId) const
 {
     for (const QJsonValue &value : m_notes) {
@@ -563,6 +629,7 @@ QString TodoApp::createNewNote()
     note.insert(QStringLiteral("position"), QJsonObject{{QStringLiteral("x"), pos.x()}, {QStringLiteral("y"), pos.y()}});
     note.insert(QStringLiteral("size"), QJsonObject{{QStringLiteral("width"), 280}, {QStringLiteral("height"), 400}});
     note.insert(QStringLiteral("visible"), true);
+    note.insert(QStringLiteral("windowLayer"), QStringLiteral("normal"));
     note.insert(QStringLiteral("createdDate"), isoNow());
     note.insert(QStringLiteral("updatedDate"), isoNow());
     m_notes.append(note);
@@ -579,8 +646,7 @@ void TodoApp::openNote(const QString &noteId)
     }
     if (m_noteViews.value(noteId)) {
         m_noteViews.value(noteId)->show();
-        m_noteViews.value(noteId)->raise();
-        m_noteViews.value(noteId)->requestActivate();
+        applyNoteWindowLayer(noteId, true);
         emit notesChanged();
         return;
     }
@@ -634,9 +700,9 @@ void TodoApp::openNote(const QString &noteId)
 
     m_noteViews.insert(noteId, view);
     m_noteControllers.insert(noteId, controller);
+    applyNoteWindowLayer(noteId, false);
     view->show();
-    view->raise();
-    view->requestActivate();
+    applyNoteWindowLayer(noteId, true);
     emit notesChanged();
 }
 
@@ -895,13 +961,7 @@ QQuickView *TodoApp::createView(const QUrl &, const QSize &size, const QSize &mi
     view->resize(size);
     view->setMinimumSize(minSize);
     view->setColor(transparent ? Qt::transparent : QColor(40, 40, 40));
-    Qt::WindowFlags flags = Qt::Window | Qt::FramelessWindowHint | Qt::WindowCloseButtonHint;
-    if (resizable) {
-        flags |= Qt::WindowMinMaxButtonsHint;
-    } else {
-        flags |= Qt::MSWindowsFixedSizeDialogHint;
-    }
-    view->setFlags(flags);
+    view->setFlags(baseViewFlags(resizable));
     return view;
 }
 
@@ -1023,6 +1083,7 @@ void TodoApp::ensureSeedData()
         {QStringLiteral("position"), QJsonObject{{QStringLiteral("x"), pos.x()}, {QStringLiteral("y"), pos.y()}}},
         {QStringLiteral("size"), QJsonObject{{QStringLiteral("width"), 280}, {QStringLiteral("height"), 400}}},
         {QStringLiteral("visible"), true},
+        {QStringLiteral("windowLayer"), QStringLiteral("normal")},
         {QStringLiteral("createdDate"), isoNow()},
         {QStringLiteral("updatedDate"), isoNow()}
     });
@@ -1038,6 +1099,50 @@ void TodoApp::refreshNoteControllers(const QString &noteId)
         if (noteId.isEmpty() || it.key() == noteId) {
             it.value()->refresh();
         }
+    }
+}
+
+void TodoApp::applyNoteWindowLayer(const QString &noteId, bool activate)
+{
+    QQuickView *view = m_noteViews.value(noteId);
+    if (!view) {
+        return;
+    }
+
+    const QString layer = noteWindowLayer(noteId);
+    const QRect geometry(view->x(), view->y(), view->width(), view->height());
+    const bool wasVisible = view->isVisible();
+    const Qt::WindowFlags flags = noteViewFlags(layer);
+    if (view->flags() != flags) {
+        view->setFlags(flags);
+        view->setGeometry(geometry);
+        if (wasVisible) {
+            view->show();
+        }
+    }
+
+    if (!wasVisible) {
+        return;
+    }
+
+    if (layer == QStringLiteral("bottom")) {
+        view->lower();
+        QTimer::singleShot(0, view, [view]() {
+            if (view) {
+                view->lower();
+            }
+        });
+        QTimer::singleShot(120, view, [view]() {
+            if (view) {
+                view->lower();
+            }
+        });
+        return;
+    }
+
+    if (activate) {
+        view->raise();
+        view->requestActivate();
     }
 }
 

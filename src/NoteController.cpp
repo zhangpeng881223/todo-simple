@@ -79,6 +79,11 @@ void NoteController::setSummaryTemplate(const QString &summaryTemplate)
     emit summaryTemplateChanged();
 }
 
+QString NoteController::windowLayer() const
+{
+    return m_app->noteWindowLayer(m_noteId);
+}
+
 void NoteController::refresh()
 {
     emit noteChanged();
@@ -244,6 +249,12 @@ void NoteController::resetSummaryTemplate()
 {
     m_app->setNoteSummaryTemplate(QString());
     emit summaryTemplateChanged();
+}
+
+void NoteController::cycleWindowLayer()
+{
+    m_app->cycleNoteWindowLayer(m_noteId);
+    emit noteChanged();
 }
 
 QJsonObject NoteController::note() const
