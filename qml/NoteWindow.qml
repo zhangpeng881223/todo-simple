@@ -266,6 +266,8 @@ Item {
         property string kind: "plus"
         property string tooltipText: ""
         property bool tooltipRightAligned: false
+        property bool suppressTooltipOnClick: false
+        property bool tooltipSuppressed: false
         readonly property color hoverBackground: root.lightTheme ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.12)
         readonly property bool hovered: mouse.containsMouse
         readonly property string iconTone: root.lightTheme ? "dark" : "light"
@@ -298,7 +300,7 @@ Item {
             width: tooltipLabel.implicitWidth + 18
             height: 28
             radius: 6
-            visible: buttonRoot.tooltipText.length > 0 && buttonRoot.hovered
+            visible: buttonRoot.tooltipText.length > 0 && buttonRoot.hovered && !buttonRoot.tooltipSuppressed
             color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.96) : Qt.rgba(45 / 255, 45 / 255, 45 / 255, 0.96)
             border.width: 1
             border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.14)
@@ -318,7 +320,14 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: buttonRoot.clicked()
+            onEntered: buttonRoot.tooltipSuppressed = false
+            onExited: buttonRoot.tooltipSuppressed = false
+            onClicked: {
+                if (buttonRoot.suppressTooltipOnClick) {
+                    buttonRoot.tooltipSuppressed = true
+                }
+                buttonRoot.clicked()
+            }
         }
     }
 
@@ -456,6 +465,7 @@ Item {
                 HeaderButton {
                     kind: "layer-" + noteController.windowLayer
                     tooltipText: "层级切换"
+                    suppressTooltipOnClick: true
                     onClicked: {
                         noteController.cycleWindowLayer()
                         toast.show(root.windowLayerToast(noteController.windowLayer))

@@ -22,6 +22,14 @@
         <file>assets/header-layer-top-light.svg</file>
         <file>assets/header-close-dark.svg</file>
         <file>assets/header-close-light.svg</file>
+        <file>assets/particle-dot.svg</file>
+        <file>assets/firework-gold.svg</file>
+        <file>assets/firework-crimson.svg</file>
+        <file>assets/firework-rose.svg</file>
+        <file>assets/firework-emerald.svg</file>
+        <file>assets/firework-azure.svg</file>
+        <file>assets/firework-violet.svg</file>
+        <file>assets/firework-orange.svg</file>
         <file>assets/chevron-down-dark.svg</file>
         <file>assets/chevron-down-light.svg</file>
         <file>assets/data-export-dark.svg</file>
@@ -49,6 +57,8 @@
         <!-- Calendar/event editor is parked for the current version. -->
         <!-- <file>CalendarWindow.qml</file> -->
         <!-- <file>EventEditorWindow.qml</file> -->
+        <file>EffectOverlayWindow.qml</file>
+        <file>EffectsTestWindow.qml</file>
         <file>ListWindow.qml</file>
         <file>NoteWindow.qml</file>
         <file>SettingsWindow.qml</file>

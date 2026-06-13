@@ -37,3 +37,7 @@ target_link_libraries(todo260606
 
 install(TARGETS todo260606 RUNTIME DESTINATION bin)
 install(FILES todo260606.desktop DESTINATION share/applications)
+install(FILES qml/assets/xiaou-todo-app-icon.png
+    DESTINATION share/icons/hicolor/128x128/apps
+    RENAME todo260606.png
+)

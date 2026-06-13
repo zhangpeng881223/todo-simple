@@ -1,6 +1,7 @@
 #include "TodoApp.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QQuickStyle>
 #include <QSurfaceFormat>
 #include <QTranslator>
@@ -37,6 +38,7 @@ int main(int argc, char *argv[])
     Dtk::Widget::DApplication app(argc, argv);
     Dtk::Gui::DWindowManagerHelper::setWmClassName("todo260606");
     app.setProductName(QStringLiteral("小U待办"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png")));
     auto *dtkWidgetTranslator = new QTranslator(&app);
     if (dtkWidgetTranslator->load(QStringLiteral("/usr/share/dtk6/DWidget/translations/dtkwidget_zh_CN.qm"))) {
         app.installTranslator(dtkWidgetTranslator);

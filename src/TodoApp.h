@@ -60,6 +60,7 @@ public:
 
     Q_INVOKABLE QString createNewNote();
     Q_INVOKABLE void openNote(const QString &noteId);
+    Q_INVOKABLE void showNoteOnDesktop(const QString &noteId);
     Q_INVOKABLE void hideNote(const QString &noteId);
     Q_INVOKABLE void deleteNote(const QString &noteId);
     Q_INVOKABLE void updateNoteTitle(const QString &noteId, const QString &title);
@@ -71,6 +72,9 @@ public:
     Q_INVOKABLE void setNoteTodoPriority(const QString &noteId, const QString &todoId, const QString &priority);
     Q_INVOKABLE void moveNoteTodoById(const QString &noteId, const QString &todoId, int toDisplayIndex);
     Q_INVOKABLE void showListWindow();
+    Q_INVOKABLE void showEffectsTestWindow();
+    Q_INVOKABLE void triggerFireworksEffect();
+    Q_INVOKABLE void triggerMainWindowPowderEffect();
     // Q_INVOKABLE void showCalendarWindow();
     Q_INVOKABLE void showSettingsWindow();
     Q_INVOKABLE void showAboutDialog();
@@ -81,6 +85,7 @@ public:
     Q_INVOKABLE QString importData();
     Q_INVOKABLE QString openStoragePath();
     Q_INVOKABLE QString summarizeAllNotes();
+    Q_INVOKABLE QString summarizeNotesRange(const QString &scope);
     Q_INVOKABLE QString summaryTemplate(const QString &scope) const;
     Q_INVOKABLE QString defaultSummaryTemplate(const QString &scope) const;
     Q_INVOKABLE void setSummaryTemplate(const QString &scope, const QString &summaryTemplate);
@@ -97,6 +102,8 @@ signals:
 private:
     QQuickView *createView(const QUrl &source, const QSize &size, const QSize &minSize, bool transparent, bool resizable);
     void createTray();
+    void handleTrayTrigger();
+    void openNoteWithLayer(const QString &noteId, const QString &layer);
     void loadData();
     void saveNotes() const;
     void saveEvents() const;
@@ -114,6 +121,9 @@ private:
     QString defaultMonthSummaryTemplate() const;
     QString buildCurrentNoteSummaryPrompt(const QJsonObject &note) const;
     QString buildAllNotesSummaryPrompt() const;
+    QString buildNotesRangeSummaryPrompt(const QString &scope) const;
+    QVariantList buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const;
+    void showEffectOverlay(const QString &mode, const QVariantList &particles = QVariantList(), bool restoreListWindowOnClose = false);
     QString dataFilePath(const QString &name) const;
     QString m_dataDir;
     QJsonArray m_notes;
@@ -126,6 +136,8 @@ private:
     QHash<QString, QPointer<NoteController>> m_noteControllers;
     QPointer<QWindow> m_listWindow;
     QPointer<QQmlEngine> m_listEngine;
+    QPointer<QQuickView> m_effectsTestView;
+    QPointer<QQuickView> m_effectOverlayView;
     // QPointer<QQuickView> m_calendarView;
     QPointer<QQuickView> m_settingsView;
     // QPointer<QQuickView> m_eventEditorView;

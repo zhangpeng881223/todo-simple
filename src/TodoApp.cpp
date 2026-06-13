@@ -22,8 +22,10 @@
 #include <QPixmap>
 #include <QProcess>
 #include <QDebug>
+#include <QRandomGenerator>
 #include <QQmlComponent>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QStandardPaths>
@@ -33,9 +35,13 @@
 #include <DAboutDialog>
 #include <DGuiApplicationHelper>
 
+#include <cmath>
+#include <memory>
+
 namespace {
 constexpr int MaxNotes = 999;
 constexpr int MaxPromptLength = 12000;
+const char ProductIconPath[] = ":/assets/xiaou-todo-app-icon.png";
 
 QString isoNow()
 {
@@ -134,9 +140,9 @@ QString completionSummary(const QJsonArray &todos)
 
 QIcon aboutProductIcon()
 {
-    const QPixmap source(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
+    const QPixmap source(QString::fromLatin1(ProductIconPath));
     if (source.isNull()) {
-        return QIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
+        return QIcon(QString::fromLatin1(ProductIconPath));
     }
 
     constexpr int canvasSize = 128;
@@ -153,6 +159,11 @@ QIcon aboutProductIcon()
     painter.drawPixmap(target, source);
 
     return QIcon(canvas);
+}
+
+QIcon productIcon()
+{
+    return QIcon(QString::fromLatin1(ProductIconPath));
 }
 
 QString appDataDir()
@@ -270,6 +281,9 @@ void TodoApp::initialize()
         }
         if (args.contains(QStringLiteral("--list"))) {
             showListWindow();
+        }
+        if (args.contains(QStringLiteral("--effects"))) {
+            showEffectsTestWindow();
         }
         // if (args.contains(QStringLiteral("--calendar"))) {
         //     showCalendarWindow();
@@ -703,9 +717,40 @@ QString TodoApp::createNewNote()
 
 void TodoApp::openNote(const QString &noteId)
 {
+    openNoteWithLayer(noteId, QString());
+}
+
+void TodoApp::showNoteOnDesktop(const QString &noteId)
+{
+    openNoteWithLayer(noteId, QStringLiteral("normal"));
+}
+
+void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
+{
     if (noteId.isEmpty()) {
         return;
     }
+    const QString normalizedLayer = layer.isEmpty() ? QString() : normalizedWindowLayer(layer);
+
+    auto setRequestedLayer = [this, &normalizedLayer](const QString &targetNoteId) {
+        if (normalizedLayer.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < m_notes.size(); ++i) {
+            QJsonObject note = m_notes.at(i).toObject();
+            if (note.value(QStringLiteral("id")).toVariant().toString() != targetNoteId) {
+                continue;
+            }
+            if (note.value(QStringLiteral("windowLayer")).toString() != normalizedLayer) {
+                note.insert(QStringLiteral("windowLayer"), normalizedLayer);
+                m_notes.replace(i, note);
+                saveNotes();
+            }
+            return;
+        }
+    };
+
+    setRequestedLayer(noteId);
     if (m_noteViews.value(noteId)) {
         m_noteViews.value(noteId)->show();
         applyNoteWindowLayer(noteId, true);
@@ -719,6 +764,9 @@ void TodoApp::openNote(const QString &noteId)
     }
     QJsonObject patch;
     patch.insert(QStringLiteral("visible"), true);
+    if (!normalizedLayer.isEmpty()) {
+        patch.insert(QStringLiteral("windowLayer"), normalizedLayer);
+    }
     updateNote(noteId, patch);
     note = noteById(noteId);
 
@@ -821,6 +869,7 @@ void TodoApp::showListWindow()
         m_listEngine = nullptr;
         return;
     }
+    window->setIcon(productIcon());
     m_listWindow = window;
     connect(window, &QObject::destroyed, this, [this]() {
         m_listWindow = nullptr;
@@ -832,6 +881,83 @@ void TodoApp::showListWindow()
     window->show();
     window->raise();
     window->requestActivate();
+}
+
+void TodoApp::showEffectsTestWindow()
+{
+    if (m_effectsTestView) {
+        m_effectsTestView->show();
+        m_effectsTestView->raise();
+        m_effectsTestView->requestActivate();
+        return;
+    }
+
+    m_effectsTestView = createView(QUrl(QStringLiteral("qrc:/EffectsTestWindow.qml")),
+                                   QSize(280, 156),
+                                   QSize(260, 140),
+                                   true,
+                                   false);
+    m_effectsTestView->rootContext()->setContextProperty(QStringLiteral("app"), this);
+    m_effectsTestView->setSource(QUrl(QStringLiteral("qrc:/EffectsTestWindow.qml")));
+    m_effectsTestView->setFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    connect(m_effectsTestView, &QObject::destroyed, this, [this]() { m_effectsTestView = nullptr; });
+    m_effectsTestView->show();
+    m_effectsTestView->raise();
+    m_effectsTestView->requestActivate();
+}
+
+void TodoApp::triggerFireworksEffect()
+{
+    qDebug() << "effects: trigger fireworks";
+    showEffectOverlay(QStringLiteral("fireworks"));
+}
+
+void TodoApp::triggerMainWindowPowderEffect()
+{
+    qDebug() << "effects: trigger powder";
+    if (m_effectOverlayView) {
+        qDebug() << "effects: overlay already active";
+        m_effectOverlayView->raise();
+        return;
+    }
+
+    if (!m_listWindow) {
+        qDebug() << "effects: list window missing, showing first";
+        showListWindow();
+        QTimer::singleShot(180, this, &TodoApp::triggerMainWindowPowderEffect);
+        return;
+    }
+
+    if (!m_listWindow->isVisible()) {
+        qDebug() << "effects: list window hidden, showing first";
+        m_listWindow->show();
+        m_listWindow->raise();
+        QTimer::singleShot(120, this, &TodoApp::triggerMainWindowPowderEffect);
+        return;
+    }
+
+    QScreen *screen = m_listWindow->screen() ? m_listWindow->screen() : QGuiApplication::primaryScreen();
+    if (!screen) {
+        qDebug() << "effects: no screen for powder";
+        return;
+    }
+
+    const QRect geometry = m_listWindow->geometry();
+    const QPixmap snapshot = screen->grabWindow(m_listWindow->winId(), 0, 0, geometry.width(), geometry.height());
+    if (snapshot.isNull()) {
+        qDebug() << "effects: list snapshot failed" << geometry;
+        return;
+    }
+
+    const QVariantList particles = buildPowderParticles(snapshot, geometry);
+    if (particles.isEmpty()) {
+        qDebug() << "effects: no powder particles" << snapshot.size() << geometry;
+        return;
+    }
+
+    qDebug() << "effects: powder particles" << particles.size() << "geometry" << geometry << "snapshot" << snapshot.size();
+    m_listWindow->hide();
+    showEffectOverlay(QStringLiteral("powder"), particles, true);
 }
 
 // void TodoApp::showCalendarWindow()
@@ -866,12 +992,129 @@ void TodoApp::showSettingsWindow()
     m_settingsView->requestActivate();
 }
 
+QVariantList TodoApp::buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const
+{
+    const QImage image = snapshot.toImage().convertToFormat(QImage::Format_RGBA8888);
+    if (image.isNull() || windowGeometry.isEmpty()) {
+        return {};
+    }
+
+    constexpr int TargetParticles = 7600;
+    const int totalPixels = qMax(1, image.width() * image.height());
+    const int step = qBound(5, static_cast<int>(std::sqrt(totalPixels / static_cast<double>(TargetParticles))), 12);
+    const double scaleX = windowGeometry.width() / static_cast<double>(image.width());
+    const double scaleY = windowGeometry.height() / static_cast<double>(image.height());
+
+    QVariantList particles;
+    particles.reserve(TargetParticles + 400);
+    QRandomGenerator *rng = QRandomGenerator::global();
+
+    for (int y = step / 2; y < image.height(); y += step) {
+        for (int x = step / 2; x < image.width(); x += step) {
+            const QColor color = image.pixelColor(x, y);
+            if (color.alpha() < 24) {
+                continue;
+            }
+
+            QVariantMap particle;
+            particle.insert(QStringLiteral("x"), windowGeometry.x() + x * scaleX);
+            particle.insert(QStringLiteral("y"), windowGeometry.y() + y * scaleY);
+            particle.insert(QStringLiteral("size"), qBound(2.0, step * qMin(scaleX, scaleY) * 0.82, 6.0));
+            particle.insert(QStringLiteral("color"), color.name(QColor::HexArgb));
+            particle.insert(QStringLiteral("delay"), static_cast<int>(rng->bounded(620)));
+            particle.insert(QStringLiteral("duration"), 1450 + static_cast<int>(rng->bounded(1000)));
+            particle.insert(QStringLiteral("dx"), 230 + static_cast<int>(rng->bounded(560)));
+            particle.insert(QStringLiteral("dy"), -260 + static_cast<int>(rng->bounded(280)));
+            particle.insert(QStringLiteral("spin"), -220 + static_cast<int>(rng->bounded(440)));
+            particles.append(particle);
+
+            if (particles.size() >= 9000) {
+                return particles;
+            }
+        }
+    }
+
+    return particles;
+}
+
+void TodoApp::showEffectOverlay(const QString &mode, const QVariantList &particles, bool restoreListWindowOnClose)
+{
+    if (m_effectOverlayView) {
+        qDebug() << "effects: show overlay skipped, already active" << mode;
+        m_effectOverlayView->raise();
+        return;
+    }
+
+    QScreen *screen = nullptr;
+    if (m_listWindow) {
+        screen = m_listWindow->screen();
+    }
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (!screen) {
+        qDebug() << "effects: no screen for overlay" << mode;
+        return;
+    }
+
+    qDebug() << "effects: show overlay" << mode << "particles" << particles.size() << "screen" << screen->geometry();
+    auto *view = new QQuickView;
+    view->setResizeMode(QQuickView::SizeRootObjectToView);
+    view->setColor(Qt::transparent);
+    view->setGeometry(screen->geometry());
+    view->setFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    view->rootContext()->setContextProperty(QStringLiteral("app"), this);
+    view->setSource(QUrl(QStringLiteral("qrc:/EffectOverlayWindow.qml")));
+    m_effectOverlayView = view;
+
+    auto cleanedUp = std::make_shared<bool>(false);
+    auto cleanupOverlay = [this, view, restoreListWindowOnClose, cleanedUp]() {
+        if (*cleanedUp) {
+            return;
+        }
+        *cleanedUp = true;
+        if (m_effectOverlayView == view) {
+            m_effectOverlayView = nullptr;
+        }
+        if (restoreListWindowOnClose && m_listWindow) {
+            m_listWindow->show();
+            m_listWindow->raise();
+            m_listWindow->requestActivate();
+        }
+        view->deleteLater();
+    };
+
+    connect(view, &QWindow::visibleChanged, this, [cleanupOverlay](bool visible) {
+        if (!visible) {
+            cleanupOverlay();
+        }
+    });
+    connect(view, &QObject::destroyed, this, [this, view]() {
+        if (m_effectOverlayView == view) {
+            m_effectOverlayView = nullptr;
+        }
+    });
+
+    view->show();
+    view->raise();
+
+    if (QObject *rootObject = view->rootObject()) {
+        const QVariant modeArg(mode);
+        const QVariant particlesArg = QVariant::fromValue(particles);
+        QMetaObject::invokeMethod(rootObject,
+                                  "start",
+                                  Qt::QueuedConnection,
+                                  Q_ARG(QVariant, modeArg),
+                                  Q_ARG(QVariant, particlesArg));
+    }
+}
+
 void TodoApp::showAboutDialog()
 {
     auto *dialog = new Dtk::Widget::DAboutDialog();
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    const QIcon productIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png"));
-    dialog->setWindowIcon(productIcon);
+    const QIcon icon = productIcon();
+    dialog->setWindowIcon(icon);
     dialog->setProductIcon(aboutProductIcon());
     dialog->setProductName(QStringLiteral("小U待办"));
     dialog->setVersion(QStringLiteral("1.0.0"));
@@ -980,6 +1223,11 @@ QString TodoApp::summarizeAllNotes()
     return sendPromptToUosAi(buildAllNotesSummaryPrompt());
 }
 
+QString TodoApp::summarizeNotesRange(const QString &scope)
+{
+    return sendPromptToUosAi(buildNotesRangeSummaryPrompt(scope));
+}
+
 QVariantMap TodoApp::eventById(const QString &eventId) const
 {
     for (const QJsonValue &value : m_events) {
@@ -1033,6 +1281,7 @@ QQuickView *TodoApp::createView(const QUrl &, const QSize &size, const QSize &mi
     view->setResizeMode(QQuickView::SizeRootObjectToView);
     view->resize(size);
     view->setMinimumSize(minSize);
+    view->setIcon(productIcon());
     view->setColor(transparent ? Qt::transparent : QColor(40, 40, 40));
     view->setFlags(baseViewFlags(resizable));
     return view;
@@ -1040,38 +1289,75 @@ QQuickView *TodoApp::createView(const QUrl &, const QSize &size, const QSize &mi
 
 void TodoApp::createTray()
 {
-    QPixmap pixmap(22, 22);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    QLinearGradient gradient(0, 0, 0, 22);
-    gradient.setColorAt(0, QColor(255, 220, 100));
-    gradient.setColorAt(1, QColor(255, 193, 77));
-    painter.setBrush(gradient);
-    painter.setPen(QPen(QColor(220, 170, 60), 1));
-    painter.drawRoundedRect(QRectF(1, 1, 20, 20), 4, 4);
-    painter.setPen(QPen(QColor(80, 60, 40), 2));
-    painter.drawLine(6, 7, 16, 7);
-    painter.drawLine(6, 11, 14, 11);
-    painter.drawLine(6, 15, 17, 15);
-    painter.end();
-
-    m_tray = new QSystemTrayIcon(QIcon(pixmap), this);
+    m_tray = new QSystemTrayIcon(productIcon(), this);
     m_trayMenu = new QMenu;
-    m_trayMenu->addAction(QStringLiteral("新建待办窗口"), this, &TodoApp::createNewNote);
-    m_trayMenu->addAction(QStringLiteral("所有待办"), this, &TodoApp::showListWindow);
-    // m_trayMenu->addAction(QStringLiteral("日历日程"), this, &TodoApp::showCalendarWindow);
-    m_trayMenu->addAction(QStringLiteral("设置"), this, &TodoApp::showSettingsWindow);
+    m_trayMenu->addAction(QStringLiteral("打开主窗口"), this, &TodoApp::showListWindow);
+    m_trayMenu->addAction(QStringLiteral("新建桌面待办页"), this, &TodoApp::createNewNote);
     m_trayMenu->addSeparator();
+    m_trayMenu->addAction(QStringLiteral("AI总结本周"), this, [this]() {
+        const QString result = summarizeNotesRange(QStringLiteral("week"));
+        if (m_tray) {
+            m_tray->showMessage(QStringLiteral("小U待办"), result);
+        }
+    });
+    m_trayMenu->addAction(QStringLiteral("AI总结本月"), this, [this]() {
+        const QString result = summarizeNotesRange(QStringLiteral("month"));
+        if (m_tray) {
+            m_tray->showMessage(QStringLiteral("小U待办"), result);
+        }
+    });
+    m_trayMenu->addSeparator();
+    m_trayMenu->addAction(QStringLiteral("设置"), this, &TodoApp::showSettingsWindow);
     m_trayMenu->addAction(QStringLiteral("退出"), qApp, &QApplication::quit);
     m_tray->setContextMenu(m_trayMenu);
     m_tray->setToolTip(QStringLiteral("小U待办"));
     connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
-            createNewNote();
+            handleTrayTrigger();
         }
     });
     m_tray->show();
+}
+
+void TodoApp::handleTrayTrigger()
+{
+    QString latestVisibleNoteId;
+    QString latestCreatedDate;
+    for (const QJsonValue &value : m_notes) {
+        const QJsonObject note = value.toObject();
+        const QString noteId = note.value(QStringLiteral("id")).toVariant().toString();
+        QQuickView *view = m_noteViews.value(noteId);
+        if (!view || !view->isVisible()) {
+            continue;
+        }
+        const QString createdDate = valueString(note, QStringLiteral("createdDate"));
+        if (latestVisibleNoteId.isEmpty() || createdDate > latestCreatedDate) {
+            latestVisibleNoteId = noteId;
+            latestCreatedDate = createdDate;
+        }
+    }
+
+    if (latestVisibleNoteId.isEmpty()) {
+        createNewNote();
+        return;
+    }
+
+    for (int i = 0; i < m_notes.size(); ++i) {
+        QJsonObject note = m_notes.at(i).toObject();
+        if (note.value(QStringLiteral("id")).toVariant().toString() != latestVisibleNoteId) {
+            continue;
+        }
+        if (note.value(QStringLiteral("windowLayer")).toString() != QStringLiteral("normal")) {
+            note.insert(QStringLiteral("windowLayer"), QStringLiteral("normal"));
+            m_notes.replace(i, note);
+            saveNotes();
+            emit notesChanged();
+            refreshNoteControllers(latestVisibleNoteId);
+        }
+        break;
+    }
+
+    applyNoteWindowLayer(latestVisibleNoteId, true);
 }
 
 void TodoApp::loadData()
@@ -1364,6 +1650,65 @@ QString TodoApp::buildAllNotesSummaryPrompt() const
           << QString()
           << QStringLiteral("【本月待办】");
     appendNotes(lines, m_notes, monthStart, QStringLiteral("本月暂无待办数据。"));
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString TodoApp::buildNotesRangeSummaryPrompt(const QString &scope) const
+{
+    const QString normalizedScope = scope == QStringLiteral("month") ? QStringLiteral("month") : QStringLiteral("week");
+    const QDate today = QDate::currentDate();
+    const bool monthScope = normalizedScope == QStringLiteral("month");
+    const QDate startDate = monthScope
+        ? QDate(today.year(), today.month(), 1)
+        : today.addDays(1 - today.dayOfWeek());
+    const QDate exclusiveEndDate = monthScope ? startDate.addMonths(1) : startDate.addDays(7);
+    const QDate endDate = exclusiveEndDate.addDays(-1);
+    const QDateTime start(startDate, QTime(0, 0));
+    const QDateTime exclusiveEnd(exclusiveEndDate, QTime(0, 0));
+    const QString rangeName = monthScope ? QStringLiteral("本月") : QStringLiteral("本周");
+
+    QStringList lines;
+    lines << summaryTemplate(normalizedScope)
+          << QString()
+          << QStringLiteral("统计范围：%1（%2 至 %3，%4）")
+                .arg(rangeName,
+                     startDate.toString(QStringLiteral("yyyy-MM-dd")),
+                     endDate.toString(QStringLiteral("yyyy-MM-dd")),
+                     monthScope ? QStringLiteral("当月1日至当月最后一日") : QStringLiteral("周一到周日"))
+          << QStringLiteral("当前时间：%1").arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
+          << QString()
+          << QStringLiteral("分析要求：")
+          << QStringLiteral("- 总结%1做了什么，以及还有哪些没做完。").arg(rangeName)
+          << QStringLiteral("- 如果同一件事连续几天出现，或标题/内容明显相近，请合并为同一事项分析，不要按日期重复罗列。")
+          << QStringLiteral("- 只基于下面的数据分析，不要编造未出现的信息。")
+          << QString()
+          << QStringLiteral("待办窗口数据：");
+
+    int index = 1;
+    for (const QJsonValue &value : m_notes) {
+        const QJsonObject note = value.toObject();
+        const QString dateSource = valueString(note, QStringLiteral("updatedDate"), valueString(note, QStringLiteral("createdDate")));
+        const QDateTime dateTime = QDateTime::fromString(dateSource, Qt::ISODate);
+        if (!dateTime.isValid() || dateTime < start || dateTime >= exclusiveEnd) {
+            continue;
+        }
+
+        const QJsonArray todos = note.value(QStringLiteral("todos")).toArray();
+        lines << QStringLiteral("%1. %2（创建：%3，更新：%4，完成：%5）")
+            .arg(index++)
+            .arg(note.value(QStringLiteral("title")).toString(QStringLiteral("未命名待办")))
+            .arg(formatDateTime(note.value(QStringLiteral("createdDate"))))
+            .arg(formatDateTime(note.value(QStringLiteral("updatedDate"))))
+            .arg(completionSummary(todos));
+        for (const QString &line : todoLines(todos)) {
+            lines << QStringLiteral("   %1").arg(line);
+        }
+    }
+
+    if (index == 1) {
+        lines << QStringLiteral("%1暂无待办数据。").arg(rangeName);
+    }
+
     return lines.join(QLatin1Char('\n'));
 }
 

@@ -61,6 +61,7 @@ D.ApplicationWindow {
     property string selectedNoteId: ""
     property bool wrapTodos: false
     property bool confirmingNoteDelete: false
+    property bool sidebarSummaryMenuOpen: false
     property string contextDeleteNoteId: ""
     property string contextDeleteNoteTitle: ""
     property string draggingTodoId: ""
@@ -88,6 +89,7 @@ D.ApplicationWindow {
     readonly property int sidebarInset: 6
     readonly property int sidebarRadius: 16
     readonly property int sidebarLogoSize: 32
+    readonly property int sidebarTopButtonSize: 28
     readonly property int sidebarSearchTop: sidebarInset + (sidebarLogoSize > 0 ? sidebarLogoSize + 12 : 14) + 1
     readonly property int titlebarReserve: 52
     readonly property int sidebarShadowLeftPad: 120
@@ -142,7 +144,7 @@ D.ApplicationWindow {
     }
 
     function checkboxPriorityColor(priority) {
-        if (root.lightTheme && priority === "green") return "#12e86b"
+        if (root.lightTheme && priority === "green") return "#1fb85a"
         return priorityColor(priority)
     }
 
@@ -221,6 +223,34 @@ D.ApplicationWindow {
             selectedNoteId = firstMatchingNoteId()
         }
         confirmingNoteDelete = false
+    }
+
+    function summarizeSidebarNotes() {
+        root.sidebarSummaryMenuOpen = !root.sidebarSummaryMenuOpen
+    }
+
+    function summarizeSidebarRange(scope) {
+        root.sidebarSummaryMenuOpen = false
+        root.notify(app.summarizeNotesRange(scope))
+    }
+
+    function createSidebarNote() {
+        root.sidebarSummaryMenuOpen = false
+        var noteId = app.createNewNote()
+        if (noteId && noteId.length > 0) {
+            root.searchTerm = ""
+            root.selectedNoteId = noteId
+            Qt.callLater(function() {
+                root.selectedNoteId = noteId
+                if (noteListScroll) {
+                    noteListScroll.contentY = 0
+                    noteListScroll.resetShortElastic(false)
+                }
+            })
+            root.notify("已新建待办窗口")
+        } else {
+            root.notify("无法新建待办窗口")
+        }
     }
 
     function previewText(note) {
@@ -466,18 +496,18 @@ D.ApplicationWindow {
                     blendColor: root.sidebarGlassBlend
                     tintColor: root.sidebarColor
 
-                    Rectangle {
-                        id: productLogo
+	                    Rectangle {
+	                        id: productLogo
                         x: 5
                         y: 5
-                        width: root.sidebarLogoSize
-                        height: root.sidebarLogoSize
-                        radius: root.sidebarRadius
-                        visible: root.sidebarLogoSize > 0
-                        color: "transparent"
-	                            clip: false
-                        antialiasing: true
-                        z: 2
+	                        width: root.sidebarLogoSize
+	                        height: root.sidebarLogoSize
+	                        radius: windowGlass.radius
+	                        visible: root.sidebarLogoSize > 0
+	                        color: "transparent"
+	                        clip: true
+	                        antialiasing: true
+	                        z: 2
 
                         Image {
                             anchors.fill: parent
@@ -485,11 +515,11 @@ D.ApplicationWindow {
                             sourceSize.width: parent.width
                             sourceSize.height: parent.height
                             fillMode: Image.PreserveAspectCrop
-                            smooth: true
-                        }
-                    }
+	                            smooth: true
+	                        }
+	                    }
 
-                    ColumnLayout {
+	                    ColumnLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
@@ -501,13 +531,12 @@ D.ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 38
 
-                            Rectangle {
-                                id: searchBox
-                                anchors.left: parent.left
-                                anchors.right: addNoteButton.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.rightMargin: 8
-                                height: 36
+	                            Rectangle {
+	                                id: searchBox
+	                                anchors.left: parent.left
+	                                anchors.right: parent.right
+	                                anchors.verticalCenter: parent.verticalCenter
+	                                height: 36
                                 radius: 100
                                 color: searchInput.activeFocus
                                        ? root.glassControlFocusColor
@@ -566,47 +595,10 @@ D.ApplicationWindow {
                                             return
                                         root.searchTerm = text
                                         root.ensureSelection()
-                                    }
-                                }
-                            }
-
-                            D.ToolButton {
-                                id: addNoteButton
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 36
-                                height: 36
-                                text: "+"
-                                font.pixelSize: 20
-                                onClicked: {
-                                    var noteId = app.createNewNote()
-                                    if (noteId && noteId.length > 0) {
-                                        root.selectedNoteId = noteId
-                                    }
-                                }
-                                contentItem: D.Label {
-                                    text: "+"
-                                    color: root.textColor
-                                    font.pixelSize: 17
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                }
-                                background: Rectangle {
-                                    radius: 18
-                                    color: addNoteButton.pressed
-                                           ? root.glassControlFocusColor
-                                           : (addNoteButton.hovered ? root.glassControlHoverColor : root.glassControlColor)
-                                    border.width: 1
-                                    border.color: addNoteButton.hovered
-                                                  ? root.glassControlHoverBorderColor
-                                                  : root.glassControlBorderColor
-                                    antialiasing: true
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                    Behavior on border.color { ColorAnimation { duration: 120 } }
-                                }
-                            }
-                        }
+	                                    }
+	                                }
+	                            }
+	                        }
 
                         RowLayout {
                             Layout.fillWidth: true
@@ -776,7 +768,7 @@ D.ApplicationWindow {
 
                                             QQC.Action {
                                                 text: "在桌面显示"
-                                                onTriggered: app.openNote(modelData.id)
+                                                onTriggered: app.showNoteOnDesktop(modelData.id)
                                             }
 
                                             QQC.Action {
@@ -1041,7 +1033,7 @@ D.ApplicationWindow {
 	                                        if (detailPane.note.visible) {
 	                                            app.hideNote(detailPane.note.id)
 	                                        } else {
-	                                            app.openNote(detailPane.note.id)
+	                                            app.showNoteOnDesktop(detailPane.note.id)
 	                                        }
 	                                    }
 	                                }
@@ -1591,6 +1583,66 @@ D.ApplicationWindow {
         }
     }
 
+    Row {
+        id: sidebarTopActions
+        x: root.sidebarInset + (root.sidebarWidth - root.sidebarInset * 2) - width - 7
+        y: root.sidebarInset + 7
+        spacing: 4
+        z: 130
+
+        SidebarIconButton {
+            kind: "ai"
+            tooltipText: "AI总结"
+            onClicked: root.summarizeSidebarNotes()
+        }
+
+        SidebarIconButton {
+            kind: "plus"
+            tooltipText: "新建待办"
+            onClicked: root.createSidebarNote()
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: 128
+        visible: root.sidebarSummaryMenuOpen
+        acceptedButtons: Qt.LeftButton
+        onClicked: root.sidebarSummaryMenuOpen = false
+    }
+
+    Rectangle {
+        id: sidebarSummaryMenu
+        x: Math.max(root.sidebarInset + 10, sidebarTopActions.x + sidebarTopActions.width - width)
+        y: sidebarTopActions.y + root.sidebarTopButtonSize + 7
+        width: 124
+        height: 82
+        radius: 9
+        z: 135
+        visible: root.sidebarSummaryMenuOpen
+        color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.98)
+                               : Qt.rgba(38 / 255, 39 / 255, 40 / 255, 0.98)
+        border.width: 1
+        border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.12)
+        antialiasing: true
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 7
+            spacing: 4
+
+            SummaryMenuItem {
+                label: "AI总结本周"
+                onTriggered: root.summarizeSidebarRange("week")
+            }
+
+            SummaryMenuItem {
+                label: "AI总结本月"
+                onTriggered: root.summarizeSidebarRange("month")
+            }
+        }
+    }
+
     Timer {
         id: confirmDeleteTimer
         interval: 1400
@@ -1694,6 +1746,115 @@ D.ApplicationWindow {
                     }
                 }
             }
+        }
+    }
+
+	    component SidebarIconButton: Item {
+	        id: sidebarButton
+	        width: root.sidebarTopButtonSize
+	        height: root.sidebarTopButtonSize
+
+	        signal clicked()
+	        property string kind: "plus"
+	        property string tooltipText: ""
+	        readonly property bool hovered: sidebarMouse.containsMouse
+	        readonly property color hoverBackground: root.lightTheme ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.12)
+	        readonly property color pressedBackground: root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.16)
+	        readonly property string iconTone: root.lightTheme ? "dark" : "light"
+
+	        Rectangle {
+	            anchors.centerIn: parent
+	            width: 24
+	            height: 24
+	            radius: 5
+	            color: sidebarMouse.pressed ? sidebarButton.pressedBackground
+	                                        : (sidebarButton.hovered ? sidebarButton.hoverBackground : "transparent")
+	            antialiasing: true
+	            Behavior on color { ColorAnimation { duration: 120 } }
+	        }
+
+	        Image {
+	            anchors.centerIn: parent
+	            width: 16
+	            height: 16
+	            source: "qrc:/assets/header-" + sidebarButton.kind + "-" + sidebarButton.iconTone + ".svg"
+	            sourceSize.width: 16
+	            sourceSize.height: 16
+	            smooth: true
+	            opacity: sidebarButton.hovered ? 1 : 0.72
+	            Behavior on opacity { NumberAnimation { duration: 120 } }
+	        }
+
+	        Rectangle {
+	            z: 50
+	            x: (sidebarButton.width - width) / 2
+	            y: sidebarButton.height + 4
+	            width: tooltipLabel.implicitWidth + 18
+	            height: 28
+	            radius: 6
+	            visible: sidebarButton.tooltipText.length > 0
+                         && sidebarButton.hovered
+                         && !(sidebarButton.kind === "ai" && root.sidebarSummaryMenuOpen)
+	            color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.96) : Qt.rgba(45 / 255, 45 / 255, 45 / 255, 0.96)
+	            border.width: 1
+	            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.14)
+
+	            D.Label {
+	                id: tooltipLabel
+	                anchors.centerIn: parent
+	                text: sidebarButton.tooltipText
+	                color: root.textColor
+	                font.pixelSize: 12
+	            }
+	        }
+
+	        MouseArea {
+	            id: sidebarMouse
+	            anchors.fill: parent
+	            hoverEnabled: true
+	            cursorShape: Qt.PointingHandCursor
+	            acceptedButtons: Qt.LeftButton
+	            preventStealing: true
+	            onClicked: sidebarButton.clicked()
+	        }
+	    }
+
+    component SummaryMenuItem: Item {
+        id: menuItem
+        width: parent ? parent.width : 110
+        height: 32
+
+        signal triggered()
+        property string label: ""
+        readonly property bool hovered: itemMouse.containsMouse
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 7
+            color: menuItem.hovered
+                   ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.10))
+                   : "transparent"
+            antialiasing: true
+            Behavior on color { ColorAnimation { duration: 100 } }
+        }
+
+        D.Label {
+            anchors.left: parent.left
+            anchors.leftMargin: 9
+            anchors.verticalCenter: parent.verticalCenter
+            text: menuItem.label
+            color: root.textColor
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: itemMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            acceptedButtons: Qt.LeftButton
+            preventStealing: true
+            onClicked: menuItem.triggered()
         }
     }
 
