@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import org.deepin.dtk 1.0 as D
 import "components"
 
 Item {
@@ -10,7 +11,8 @@ Item {
     height: 500
 
     readonly property var hostWindow: Window.window
-    readonly property bool lightTheme: app.noteTheme === "light" || (app.noteTheme === "system" && app.theme === "light")
+    readonly property bool systemLightTheme: D.ApplicationHelper.themeType === D.ApplicationHelper.LightType
+    readonly property bool lightTheme: app.noteTheme === "light" || (app.noteTheme === "system" && systemLightTheme)
     readonly property real bgOpacity: Math.max(0, Math.min(100, app.opacity)) / 100
     readonly property color cardColor: lightTheme ? Qt.rgba(240 / 255, 240 / 255, 240 / 255, bgOpacity) : Qt.rgba(40 / 255, 40 / 255, 40 / 255, bgOpacity)
     readonly property color textColor: lightTheme ? "#333333" : "white"

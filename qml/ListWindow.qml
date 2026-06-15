@@ -15,7 +15,7 @@ D.ApplicationWindow {
     visible: false
     title: "小U待办"
     color: "transparent"
-    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
+    flags: Qt.Window | Qt.WindowTitleHint | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
 
     D.DWindow.enabled: true
     D.DWindow.themeType: root.dtkThemeType()
@@ -92,6 +92,7 @@ D.ApplicationWindow {
     readonly property int sidebarTopButtonSize: 28
     readonly property int sidebarSearchTop: sidebarInset + (sidebarLogoSize > 0 ? sidebarLogoSize + 12 : 14) + 1
     readonly property int titlebarReserve: 52
+    readonly property int windowRadius: 12
     readonly property int sidebarShadowLeftPad: 120
     readonly property int sidebarShadowTopPad: 110
     readonly property int sidebarShadowRightPad: 190
@@ -416,7 +417,37 @@ D.ApplicationWindow {
                 text: "设置"
                 onTriggered: app.showSettingsWindow()
             }
-            D.ThemeMenu {}
+            D.Menu {
+                title: "主题"
+
+                D.MenuItem {
+                    text: ""
+                    height: 0
+                    implicitHeight: 0
+                    onTriggered: {}
+                }
+
+                D.MenuItem {
+                    text: "浅色"
+                    checkable: true
+                    checked: app.theme === "light"
+                    onTriggered: app.updateSetting("theme", "light")
+                }
+
+                D.MenuItem {
+                    text: "深色"
+                    checkable: true
+                    checked: app.theme === "dark"
+                    onTriggered: app.updateSetting("theme", "dark")
+                }
+
+                D.MenuItem {
+                    text: "跟随系统"
+                    checkable: true
+                    checked: app.theme === "system"
+                    onTriggered: app.updateSetting("theme", "system")
+                }
+            }
             D.MenuItem {
                 text: "关于"
                 onTriggered: app.showAboutDialog()
@@ -434,19 +465,50 @@ D.ApplicationWindow {
         }
     }
 
+    Item {
+        id: titleMoveArea
+        x: root.sidebarWidth + 20
+        y: 0
+        width: Math.max(0, root.width - x - 300)
+        height: root.titlebarReserve
+        z: 101
+        property real pressedCursorX: 0
+        property real pressedCursorY: 0
+        property real pressedWindowX: 0
+        property real pressedWindowY: 0
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.LeftButton
+            onPressed: {
+                var cursor = app.cursorPosition()
+                titleMoveArea.pressedCursorX = cursor.x
+                titleMoveArea.pressedCursorY = cursor.y
+                titleMoveArea.pressedWindowX = root.x
+                titleMoveArea.pressedWindowY = root.y
+            }
+            onPositionChanged: {
+                if (!pressed) return
+                var cursor = app.cursorPosition()
+                root.x = titleMoveArea.pressedWindowX + cursor.x - titleMoveArea.pressedCursorX
+                root.y = titleMoveArea.pressedWindowY + cursor.y - titleMoveArea.pressedCursorY
+            }
+        }
+    }
+
     Rectangle {
         id: windowShell
         anchors.fill: parent
-        radius: 0
+        radius: root.windowRadius
         color: "transparent"
-	                        clip: false
+        clip: false
         focus: true
         antialiasing: true
 
         LiquidGlassSurface {
             id: windowGlass
             anchors.fill: parent
-            radius: root.lightTheme ? 12 : 0
+            radius: root.windowRadius
             variant: "window"
             lightTheme: root.lightTheme
             density: root.lightTheme ? 0.18 : 0.20
@@ -500,9 +562,9 @@ D.ApplicationWindow {
 	                        id: productLogo
                         x: 5
                         y: 5
-	                        width: root.sidebarLogoSize
-	                        height: root.sidebarLogoSize
-	                        radius: windowGlass.radius
+		                        width: root.sidebarLogoSize
+		                        height: root.sidebarLogoSize
+		                        radius: root.windowRadius
 	                        visible: root.sidebarLogoSize > 0
 	                        color: "transparent"
 	                        clip: true

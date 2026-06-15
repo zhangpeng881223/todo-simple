@@ -14,6 +14,7 @@
 // class EventEditorController;
 class NoteController;
 class QMenu;
+class QTimer;
 class QWindow;
 
 class TodoApp : public QObject
@@ -93,6 +94,7 @@ public:
     Q_INVOKABLE QVariantMap eventById(const QString &eventId) const;
     Q_INVOKABLE void saveEvent(const QVariantMap &event);
     Q_INVOKABLE void deleteEvent(const QString &eventId);
+    Q_INVOKABLE QVariantMap cursorPosition() const;
 
 signals:
     void notesChanged();
@@ -111,6 +113,8 @@ private:
     void ensureSeedData();
     void refreshNoteControllers(const QString &noteId = QString());
     void applyNoteWindowLayer(const QString &noteId, bool activate);
+    void scheduleNoteGeometrySave(const QString &noteId, QQuickView *view);
+    void saveNoteGeometry(const QString &noteId, const QQuickView *view);
     void syncDtkPalette();
     void syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType);
     QString generateDefaultNoteTitle() const;
@@ -134,6 +138,7 @@ private:
     QMenu *m_trayMenu = nullptr;
     QHash<QString, QPointer<QQuickView>> m_noteViews;
     QHash<QString, QPointer<NoteController>> m_noteControllers;
+    QHash<QString, QPointer<QTimer>> m_noteGeometrySaveTimers;
     QPointer<QWindow> m_listWindow;
     QPointer<QQmlEngine> m_listEngine;
     QPointer<QQuickView> m_effectsTestView;

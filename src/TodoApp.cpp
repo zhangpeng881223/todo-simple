@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDate>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -238,6 +239,12 @@ TodoApp::TodoApp(QObject *parent)
 
 TodoApp::~TodoApp()
 {
+    if (m_tray) {
+        m_tray->hide();
+        m_tray->setContextMenu(nullptr);
+    }
+    delete m_trayMenu;
+    m_trayMenu = nullptr;
     saveNotes();
     saveEvents();
     saveSettings();
@@ -782,27 +789,19 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     view->setPosition(position.value(QStringLiteral("x")).toInt(defaultNotePosition().x()),
                       position.value(QStringLiteral("y")).toInt(defaultNotePosition().y()));
 
-    connect(view, &QQuickView::widthChanged, this, [this, noteId, view]() {
-        QJsonObject patch;
-        patch.insert(QStringLiteral("size"), QJsonObject{{QStringLiteral("width"), view->width()}, {QStringLiteral("height"), view->height()}});
-        updateNote(noteId, patch);
-    });
-    connect(view, &QQuickView::heightChanged, this, [this, noteId, view]() {
-        QJsonObject patch;
-        patch.insert(QStringLiteral("size"), QJsonObject{{QStringLiteral("width"), view->width()}, {QStringLiteral("height"), view->height()}});
-        updateNote(noteId, patch);
-    });
-    connect(view, &QQuickView::xChanged, this, [this, noteId, view]() {
-        QJsonObject patch;
-        patch.insert(QStringLiteral("position"), QJsonObject{{QStringLiteral("x"), view->x()}, {QStringLiteral("y"), view->y()}});
-        updateNote(noteId, patch);
-    });
-    connect(view, &QQuickView::yChanged, this, [this, noteId, view]() {
-        QJsonObject patch;
-        patch.insert(QStringLiteral("position"), QJsonObject{{QStringLiteral("x"), view->x()}, {QStringLiteral("y"), view->y()}});
-        updateNote(noteId, patch);
+    connect(view, &QQuickView::widthChanged, this, [this, noteId, view]() { scheduleNoteGeometrySave(noteId, view); });
+    connect(view, &QQuickView::heightChanged, this, [this, noteId, view]() { scheduleNoteGeometrySave(noteId, view); });
+    connect(view, &QQuickView::xChanged, this, [this, noteId, view]() { scheduleNoteGeometrySave(noteId, view); });
+    connect(view, &QQuickView::yChanged, this, [this, noteId, view]() { scheduleNoteGeometrySave(noteId, view); });
+    connect(view, &QWindow::visibleChanged, this, [this, noteId, view](bool visible) {
+        if (!visible) {
+            saveNoteGeometry(noteId, view);
+        }
     });
     connect(view, &QObject::destroyed, this, [this, noteId]() {
+        if (QTimer *timer = m_noteGeometrySaveTimers.take(noteId)) {
+            timer->deleteLater();
+        }
         m_noteViews.remove(noteId);
         m_noteControllers.remove(noteId);
         emit notesChanged();
@@ -1123,6 +1122,67 @@ void TodoApp::showAboutDialog()
     dialog->show();
     dialog->raise();
     dialog->activateWindow();
+}
+
+QVariantMap TodoApp::cursorPosition() const
+{
+    const QPoint position = QCursor::pos();
+    return QVariantMap{
+        {QStringLiteral("x"), position.x()},
+        {QStringLiteral("y"), position.y()}
+    };
+}
+
+void TodoApp::scheduleNoteGeometrySave(const QString &noteId, QQuickView *view)
+{
+    if (noteId.isEmpty() || !view) {
+        return;
+    }
+
+    QTimer *timer = m_noteGeometrySaveTimers.value(noteId);
+    if (!timer) {
+        QPointer<QQuickView> guardedView(view);
+        timer = new QTimer(this);
+        timer->setSingleShot(true);
+        timer->setInterval(350);
+        connect(timer, &QTimer::timeout, this, [this, noteId, guardedView]() {
+            saveNoteGeometry(noteId, guardedView);
+        });
+        m_noteGeometrySaveTimers.insert(noteId, timer);
+    }
+    timer->start();
+}
+
+void TodoApp::saveNoteGeometry(const QString &noteId, const QQuickView *view)
+{
+    if (noteId.isEmpty() || !view) {
+        return;
+    }
+
+    const QJsonObject note = noteById(noteId);
+    if (note.isEmpty()) {
+        return;
+    }
+
+    const QJsonObject currentSize = note.value(QStringLiteral("size")).toObject();
+    const QJsonObject currentPosition = note.value(QStringLiteral("position")).toObject();
+    if (currentSize.value(QStringLiteral("width")).toInt() == view->width()
+        && currentSize.value(QStringLiteral("height")).toInt() == view->height()
+        && currentPosition.value(QStringLiteral("x")).toInt() == view->x()
+        && currentPosition.value(QStringLiteral("y")).toInt() == view->y()) {
+        return;
+    }
+
+    QJsonObject patch;
+    patch.insert(QStringLiteral("size"), QJsonObject{
+        {QStringLiteral("width"), view->width()},
+        {QStringLiteral("height"), view->height()}
+    });
+    patch.insert(QStringLiteral("position"), QJsonObject{
+        {QStringLiteral("x"), view->x()},
+        {QStringLiteral("y"), view->y()}
+    });
+    updateNote(noteId, patch);
 }
 
 // void TodoApp::showEventEditor(const QVariantMap &eventData)

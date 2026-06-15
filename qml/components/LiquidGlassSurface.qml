@@ -48,7 +48,7 @@ Rectangle {
         to: 1
         duration: surface.panelMode ? 9000 : 5200
         loops: Animation.Infinite
-        running: surface.visible
+        running: surface.visible && surface.opticsMode && (surface.hovered || surface.active || surface.pressed)
     }
 
     D.StyledBehindWindowBlur {
