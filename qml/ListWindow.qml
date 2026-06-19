@@ -72,6 +72,8 @@ D.ApplicationWindow {
     property bool sidebarSummaryMenuOpen: false
     property string contextDeleteNoteId: ""
     property string contextDeleteNoteTitle: ""
+    property string feedbackDraftContent: ""
+    property string feedbackDraftContact: ""
     property string draggingTodoId: ""
     property int dragStartIndex: -1
     property int dragTargetIndex: -1
@@ -1637,10 +1639,19 @@ D.ApplicationWindow {
                         }
                     }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumHeight: 38
+                        Layout.preferredHeight: 38
+                        Layout.maximumHeight: 38
+                        spacing: 10
+
 	                    Rectangle {
                             id: addTodoBox
 	                        Layout.fillWidth: true
+                            Layout.minimumHeight: 38
 	                        Layout.preferredHeight: 38
+                            Layout.maximumHeight: 38
 	                        radius: 100
 	                        color: addTodoInput.activeFocus
 	                               ? root.glassControlFocusColor
@@ -1684,6 +1695,41 @@ D.ApplicationWindow {
 	                                }
 	                            }
 	                        }
+                    }
+
+                        Rectangle {
+                            id: feedbackButton
+                            Layout.preferredWidth: 58
+                            Layout.minimumHeight: 38
+                            Layout.preferredHeight: 38
+                            Layout.maximumHeight: 38
+                            radius: 100
+                            color: feedbackMouse.pressed
+                                   ? root.glassControlFocusColor
+                                   : (feedbackMouse.containsMouse ? root.glassControlHoverColor : root.glassControlColor)
+                            border.width: 1
+                            border.color: feedbackMouse.containsMouse ? root.glassControlHoverBorderColor : root.glassControlBorderColor
+                            antialiasing: true
+
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                            D.Label {
+                                anchors.centerIn: parent
+                                text: "反馈"
+                                color: feedbackMouse.containsMouse ? root.textColor : root.mutedColor
+                                font.pixelSize: 13
+                                font.weight: Font.Medium
+                            }
+
+                            MouseArea {
+                                id: feedbackMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: feedbackDialog.open()
+                            }
+                        }
                     }
                 }
 
@@ -1881,6 +1927,157 @@ D.ApplicationWindow {
                         root.contextDeleteNoteId = ""
                         root.contextDeleteNoteTitle = ""
                         deleteNoteDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    QQC.Popup {
+        id: feedbackDialog
+        modal: true
+        focus: true
+        width: 420
+        height: 450
+        anchors.centerIn: parent
+        closePolicy: QQC.Popup.CloseOnEscape | QQC.Popup.CloseOnPressOutside
+
+        onOpened: Qt.callLater(function() {
+            feedbackContentInput.forceActiveFocus()
+        })
+
+        background: Rectangle {
+            radius: 14
+            color: root.lightTheme ? "#ffffff" : "#2b2c2e"
+            border.width: 1
+            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.10)
+            antialiasing: true
+        }
+
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 22
+            spacing: 8
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "反馈"
+                color: root.textColor
+                font.pixelSize: 17
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "感谢您使用小U待办，如果遇到问题或希望小U增加什么功能，请填写反馈，帮助小U待办变得更好。但作者希望我们一起秉承少即是多的理念，尽可能保证小U同学的简约性。"
+                color: root.mutedColor
+                font.pixelSize: 12
+                lineHeight: 1.25
+                wrapMode: Text.WordWrap
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "反馈内容"
+                color: root.mutedColor
+                font.pixelSize: 12
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 112
+                radius: 8
+                color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.035) : Qt.rgba(1, 1, 1, 0.06)
+                border.width: 1
+                border.color: feedbackContentInput.activeFocus
+                              ? root.glassControlFocusBorderColor
+                              : root.glassControlBorderColor
+                antialiasing: true
+
+                QQC.TextArea {
+                    id: feedbackContentInput
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    placeholderText: "请输入你的问题、建议或想要的功能..."
+                    placeholderTextColor: root.weakColor
+                    color: root.textColor
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    font.pixelSize: 13
+                    background: Item {}
+                }
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                text: "联系方式（选填）"
+                color: root.mutedColor
+                font.pixelSize: 12
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.minimumHeight: 38
+                Layout.preferredHeight: 38
+                Layout.maximumHeight: 38
+                radius: 8
+                color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.035) : Qt.rgba(1, 1, 1, 0.06)
+                border.width: 1
+                border.color: feedbackContactInput.activeFocus
+                              ? root.glassControlFocusBorderColor
+                              : root.glassControlBorderColor
+                antialiasing: true
+
+                QQC.TextField {
+                    id: feedbackContactInput
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 10
+                    placeholderText: "微信、邮箱或手机号"
+                    placeholderTextColor: root.weakColor
+                    color: root.textColor
+                    selectByMouse: true
+                    font.pixelSize: 13
+                    background: Item {}
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 4
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.minimumHeight: 40
+                Layout.preferredHeight: 40
+                Layout.maximumHeight: 40
+                spacing: 10
+
+                D.Button {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    text: "取消"
+                    onClicked: feedbackDialog.close()
+                }
+
+                D.Button {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    text: "提交"
+                    highlighted: true
+                    onClicked: {
+                        var content = feedbackContentInput.text.trim()
+                        if (content.length === 0) {
+                            feedbackContentInput.forceActiveFocus()
+                            root.notify("请先输入反馈内容")
+                            return
+                        }
+                        root.feedbackDraftContent = content
+                        root.feedbackDraftContact = feedbackContactInput.text.trim()
+                        feedbackDialog.close()
+                        root.notify("反馈入口已准备，待接入存储")
                     }
                 }
             }
