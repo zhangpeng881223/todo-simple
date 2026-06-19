@@ -36,6 +36,7 @@ public:
     Q_INVOKABLE QString addTodo(int afterIndex = -1);
     Q_INVOKABLE void updateTodoText(int index, const QString &text);
     Q_INVOKABLE void commitTodoText(int index, const QString &text);
+    Q_INVOKABLE QString commitTodoTextAndAddNext(int index, const QString &text);
     Q_INVOKABLE void toggleTodo(int index);
     Q_INVOKABLE void deleteTodo(int index);
     Q_INVOKABLE void setPriority(int index, const QString &priority);

@@ -16,6 +16,7 @@ D.ApplicationWindow {
     title: "小U待办"
     color: "transparent"
     flags: Qt.Window | Qt.WindowTitleHint | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
+    background: Item {}
 
     D.DWindow.enabled: true
     D.DWindow.themeType: root.dtkThemeType()
@@ -25,7 +26,14 @@ D.ApplicationWindow {
     readonly property bool lightTheme: app.theme === "light"
                                        || (app.theme === "system"
                                            && D.ApplicationHelper.themeType === D.ApplicationHelper.LightType)
-    readonly property color windowColor: lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.36) : Qt.rgba(24 / 255, 25 / 255, 26 / 255, 0.34)
+    readonly property real mainWindowOpacity: Math.max(0, Math.min(1, app.mainWindowOpacity))
+    readonly property real mainWallpaperBlur: Math.max(0, Math.min(1, app.mainWallpaperBlur))
+    readonly property real mainWindowLightTintOpacity: mainWindowOpacity
+    readonly property real mainWindowDarkTintOpacity: mainWindowOpacity
+    readonly property real rightPanelOpacity: Math.max(0, Math.min(0.8, app.mainRightPanelOpacity))
+    readonly property real rightPanelLightTintOpacity: Math.max(0, Math.min(0.8, rightPanelOpacity - 0.16))
+    readonly property real rightPanelDarkTintOpacity: rightPanelOpacity
+    readonly property color windowColor: lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, Math.min(1, mainWindowLightTintOpacity + 0.02)) : Qt.rgba(16 / 255, 19 / 255, 22 / 255, Math.min(1, mainWindowDarkTintOpacity + 0.08))
     readonly property color titlebarColor: windowColor
     readonly property color sidebarColor: lightTheme ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.26)
     readonly property color sidebarGlassBlend: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(34 / 255, 35 / 255, 36 / 255, 0.22)
@@ -40,7 +48,7 @@ D.ApplicationWindow {
     readonly property color textColor: lightTheme ? "#252525" : "#f3f4f4"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.56) : "#9aa2a6"
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.34) : "#6f777b"
-    readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.13) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.15)
+    readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 196 / 255, 48 / 255, 0.36) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.26)
     readonly property color selectedBorderColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.28) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.24)
     readonly property color glassControlColor: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.055)
     readonly property color glassControlHoverColor: lightTheme ? Qt.rgba(1, 1, 1, 0.46) : Qt.rgba(1, 1, 1, 0.08)
@@ -59,7 +67,7 @@ D.ApplicationWindow {
 
     property string searchTerm: ""
     property string selectedNoteId: ""
-    property bool wrapTodos: false
+    readonly property bool wrapTodos: app.todosWrapEnabled
     property bool confirmingNoteDelete: false
     property bool sidebarSummaryMenuOpen: false
     property string contextDeleteNoteId: ""
@@ -85,6 +93,7 @@ D.ApplicationWindow {
     readonly property real todoRowHeight: 35.2
     readonly property real todoRowSpacing: 4.4
     readonly property real rowDragStep: todoRowHeight + todoRowSpacing
+    readonly property real todoCheckboxTopMargin: Math.max(0, Math.round((todoRowHeight - 16) / 2))
     readonly property int sidebarWidth: 300
     readonly property int sidebarInset: 6
     readonly property int sidebarRadius: 16
@@ -97,6 +106,7 @@ D.ApplicationWindow {
     readonly property int sidebarShadowTopPad: 110
     readonly property int sidebarShadowRightPad: 190
     readonly property int sidebarShadowBottomPad: 160
+    readonly property real backdropProtection: 0
 
     function notify(message) {
         var text = String(message || "")
@@ -137,16 +147,41 @@ D.ApplicationWindow {
     }
 
     function priorityColor(priority) {
-        if (priority === "red") return Qt.darker(root.redColor, 1.1)
-        if (priority === "orange") return Qt.darker(root.accentColor, 1.1)
-        if (priority === "blue") return Qt.darker(root.blueColor, 1.1)
-        if (priority === "green") return Qt.darker(root.greenColor, 1.1)
+        if (priority === "red") return "#ff5f57"
+        if (priority === "orange") return "#ffbd2e"
+        if (priority === "blue") return "#1d8cf8"
+        if (priority === "green") return "#28c840"
         return "#8e8e93"
     }
 
     function checkboxPriorityColor(priority) {
-        if (root.lightTheme && priority === "green") return "#1fb85a"
         return priorityColor(priority)
+    }
+
+    function mixColor(colorA, colorB, amount) {
+        var t = Math.max(0, Math.min(1, amount))
+        return Qt.rgba(
+            colorA.r + (colorB.r - colorA.r) * t,
+            colorA.g + (colorB.g - colorA.g) * t,
+            colorA.b + (colorB.b - colorA.b) * t,
+            colorA.a + (colorB.a - colorA.a) * t
+        )
+    }
+
+    function readabilityColor(lightBaseAlpha, lightProtectedAlpha, darkBaseAlpha, darkProtectedAlpha) {
+        var lightBase = Qt.rgba(235 / 255, 244 / 255, 1, lightBaseAlpha)
+        var lightProtected = Qt.rgba(238 / 255, 238 / 255, 238 / 255, lightProtectedAlpha)
+        var darkBase = Qt.rgba(0.08, 0.09, 0.10, darkBaseAlpha)
+        var darkProtected = Qt.rgba(24 / 255, 24 / 255, 24 / 255, darkProtectedAlpha)
+        return root.lightTheme
+               ? mixColor(lightBase, lightProtected, root.backdropProtection)
+               : mixColor(darkBase, darkProtected, root.backdropProtection)
+    }
+
+    function readabilityAlpha(lightBaseAlpha, lightProtectedAlpha, darkBaseAlpha, darkProtectedAlpha) {
+        return root.lightTheme
+               ? lightBaseAlpha + (lightProtectedAlpha - lightBaseAlpha) * root.backdropProtection
+               : darkBaseAlpha + (darkProtectedAlpha - darkBaseAlpha) * root.backdropProtection
     }
 
     function defaultTodoBg() {
@@ -155,19 +190,13 @@ D.ApplicationWindow {
 
     function priorityBg(priority) {
         if (app.priorityStyle === "simple" || priority === "gray" || priority === "none" || !priority) {
-            return defaultTodoBg()
+            return "transparent"
         }
-        if (!lightTheme) {
-            if (priority === "red") return Qt.rgba(255 / 255, 112 / 255, 104 / 255, priorityTodoAlphaDark)
-            if (priority === "orange") return Qt.rgba(255 / 255, 197 / 255, 68 / 255, priorityTodoAlphaDark)
-            if (priority === "blue") return Qt.rgba(64 / 255, 174 / 255, 255 / 255, priorityTodoAlphaDark)
-            if (priority === "green") return Qt.rgba(62 / 255, 226 / 255, 116 / 255, priorityTodoAlphaDark)
-        }
-        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 88 / 255, priorityTodoAlphaLight)
-        if (priority === "orange") return Qt.rgba(255 / 255, 181 / 255, 32 / 255, priorityTodoAlphaLight)
-        if (priority === "blue") return Qt.rgba(46 / 255, 163 / 255, 255 / 255, priorityTodoAlphaLight)
-        if (priority === "green") return Qt.rgba(40 / 255, 215 / 255, 100 / 255, priorityTodoAlphaLight)
-        return defaultTodoBg()
+        if (priority === "red") return Qt.rgba(255 / 255, 95 / 255, 87 / 255, 0.08)
+        if (priority === "orange") return Qt.rgba(255 / 255, 189 / 255, 46 / 255, 0.08)
+        if (priority === "blue") return Qt.rgba(29 / 255, 140 / 255, 248 / 255, 0.08)
+        if (priority === "green") return Qt.rgba(40 / 255, 200 / 255, 64 / 255, 0.08)
+        return "transparent"
     }
 
     function priorityTodoCount() {
@@ -505,20 +534,37 @@ D.ApplicationWindow {
         focus: true
         antialiasing: true
 
+        WallpaperBackdrop {
+            id: wallpaperBackdrop
+            anchors.fill: parent
+            radius: root.windowRadius
+            source: app.mainWallpaperMode === "default"
+                    ? (root.lightTheme ? "qrc:/assets/default-main-wallpaper-source-light.jpg"
+                                       : "qrc:/assets/default-main-wallpaper-source-dark.jpg")
+                    : app.wallpaperSource
+            screenGeometry: app.wallpaperScreenGeometry
+            windowX: root.x
+            windowY: root.y
+            followScreenPosition: app.mainWallpaperMode === "system"
+            blurAmount: root.mainWallpaperBlur
+            fallbackColor: root.windowColor
+        }
+
         LiquidGlassSurface {
             id: windowGlass
             anchors.fill: parent
             radius: root.windowRadius
             variant: "window"
             lightTheme: root.lightTheme
+            blurEnabled: false
             density: root.lightTheme ? 0.18 : 0.20
-            tintOpacity: root.lightTheme ? 0.30 : 0.32
+            tintOpacity: root.lightTheme ? root.mainWindowLightTintOpacity : root.mainWindowDarkTintOpacity
             edgeOpacity: root.lightTheme ? 0.24 : 0.10
             highlightOpacity: 0
             lensOpacity: 0
             chromaOpacity: 0
-            blendColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.28) : Qt.rgba(0.08, 0.09, 0.10, 0.28)
-            tintColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, 0.30) : Qt.rgba(0.08, 0.09, 0.10, 0.32)
+            blendColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, root.mainWindowLightTintOpacity) : Qt.rgba(0.08, 0.09, 0.10, Math.max(0, root.mainWindowDarkTintOpacity - 0.02))
+            tintColor: root.lightTheme ? Qt.rgba(235 / 255, 244 / 255, 1, root.mainWindowLightTintOpacity) : Qt.rgba(0.08, 0.09, 0.10, root.mainWindowDarkTintOpacity)
         }
 
         RowLayout {
@@ -529,34 +575,10 @@ D.ApplicationWindow {
                 Layout.preferredWidth: root.sidebarWidth
                 Layout.fillHeight: true
 
-                Rectangle {
-                    id: sidebarSoftSeparation
-                    anchors.fill: parent
-                    anchors.margins: root.sidebarInset
-                    radius: root.sidebarRadius
-                    visible: true
-                    color: "transparent"
-                    border.width: 1
-                    border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.035) : Qt.rgba(1, 1, 1, 0.055)
-                    antialiasing: true
-                }
-
-                LiquidGlassSurface {
+                Item {
                     id: sidebarPanel
                     anchors.fill: parent
                     anchors.margins: root.sidebarInset
-                    radius: root.sidebarRadius
-                    variant: "frosted"
-                    lightTheme: root.lightTheme
-                    density: root.lightTheme ? 0.22 : 0.24
-                    tintOpacity: root.lightTheme ? 0.16 : 0.09
-                    edgeOpacity: root.lightTheme ? 0.34 : 0.12
-                    highlightOpacity: root.lightTheme ? 0.12 : 0.07
-                    lensOpacity: root.lightTheme ? 0.04 : 0.04
-                    chromaOpacity: 0
-                    thicknessOpacity: 0
-                    blendColor: root.sidebarGlassBlend
-                    tintColor: root.sidebarColor
 
 	                    Rectangle {
 	                        id: productLogo
@@ -822,19 +844,45 @@ D.ApplicationWindow {
 
                                         QQC.Menu {
                                             id: noteContextMenu
+                                            width: 158
+                                            topPadding: 5
+                                            bottomPadding: 5
+                                            leftPadding: 6
+                                            rightPadding: 6
 
-                                            QQC.Action {
+                                            background: Rectangle {
+                                                implicitWidth: 158
+                                                implicitHeight: 140
+                                                radius: 8
+                                                antialiasing: true
+                                                color: root.lightTheme ? Qt.rgba(245 / 255, 245 / 255, 245 / 255, 0.96)
+                                                                       : Qt.rgba(42 / 255, 42 / 255, 42 / 255, 0.96)
+                                                border.width: 1
+                                                border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.08)
+                                                                             : Qt.rgba(1, 1, 1, 0.10)
+                                            }
+
+                                            SidebarContextMenuItem {
                                                 text: "AI总结"
+                                                iconSource: "qrc:/assets/header-ai-" + root.iconTone + ".svg"
                                                 onTriggered: root.notify(app.summarizeNote(modelData.id))
                                             }
 
-                                            QQC.Action {
+                                            SidebarContextMenuItem {
                                                 text: "在桌面显示"
+                                                iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
                                                 onTriggered: app.showNoteOnDesktop(modelData.id)
                                             }
 
-                                            QQC.Action {
+                                            SidebarContextMenuItem {
+                                                text: "同步到系统日历"
+                                                iconSource: "qrc:/assets/toolbar-calendar-" + root.iconTone + ".svg"
+                                                onTriggered: root.notify(app.syncNoteTodosToSystemCalendar(modelData.id))
+                                            }
+
+                                            SidebarContextMenuItem {
                                                 text: "删除"
+                                                iconSource: "qrc:/assets/toolbar-trash-" + root.iconTone + ".svg"
                                                 onTriggered: {
                                                     root.contextDeleteNoteId = modelData.id
                                                     root.contextDeleteNoteTitle = modelData.title || "无标题"
@@ -1012,6 +1060,34 @@ D.ApplicationWindow {
                 property var note: root.selectedNote()
                 onNoteChanged: root.syncDetailTodos(false)
 
+                LiquidGlassSurface {
+                    id: detailWorkSurface
+                    anchors.fill: parent
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 5
+                    anchors.topMargin: 5
+                    anchors.bottomMargin: 5
+                    radius: root.windowRadius
+                    variant: "readability"
+                    lightTheme: root.lightTheme
+                    visible: root.rightPanelOpacity > 0.001
+                    enabled: visible
+                    // The main window already paints the selected wallpaper as its base.
+                    // Keep this layer local to that base instead of blurring whatever
+                    // real window happens to be behind the app.
+                    blurEnabled: false
+                    protection: root.backdropProtection
+                    density: 0.14
+                    tintOpacity: root.readabilityAlpha(root.rightPanelLightTintOpacity, Math.min(0.8, root.rightPanelLightTintOpacity + 0.20), root.rightPanelDarkTintOpacity, Math.min(0.8, root.rightPanelDarkTintOpacity + 0.14))
+                    edgeOpacity: root.lightTheme ? 0.10 + 0.04 * root.backdropProtection : 0.07 + 0.03 * root.backdropProtection
+                    highlightOpacity: 0
+                    lensOpacity: 0
+                    chromaOpacity: 0
+                    thicknessOpacity: 0
+                    blendColor: root.readabilityColor(root.rightPanelLightTintOpacity, Math.min(0.8, root.rightPanelLightTintOpacity + 0.20), root.rightPanelDarkTintOpacity, Math.min(0.8, root.rightPanelDarkTintOpacity + 0.14))
+                    tintColor: root.readabilityColor(root.rightPanelLightTintOpacity, Math.min(0.8, root.rightPanelLightTintOpacity + 0.20), root.rightPanelDarkTintOpacity, Math.min(0.8, root.rightPanelDarkTintOpacity + 0.14))
+                }
+
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 28
@@ -1075,15 +1151,6 @@ D.ApplicationWindow {
 	                                    onClicked: if (detailPane.note) root.notify(app.summarizeNote(detailPane.note.id))
 	                                }
 
-                                ActionButton {
-	                                    label: "允许换行"
-	                                    iconSource: "qrc:/assets/toolbar-wrap-" + root.iconTone + ".svg"
-	                                    hoverIconSource: "qrc:/assets/toolbar-wrap-accent.svg"
-	                                    activeIconSource: "qrc:/assets/toolbar-wrap-active-" + root.iconTone + ".svg"
-	                                    active: root.wrapTodos
-	                                    onClicked: root.wrapTodos = !root.wrapTodos
-	                                }
-
 	                                ActionButton {
 		                                    label: "在桌面显示"
 		                                    iconSource: "qrc:/assets/toolbar-desktop-" + root.iconTone + ".svg"
@@ -1099,6 +1166,14 @@ D.ApplicationWindow {
 	                                        }
 	                                    }
 	                                }
+
+                                ActionButton {
+                                    label: "同步到日历"
+                                    iconSource: "qrc:/assets/toolbar-calendar-" + root.iconTone + ".svg"
+                                    hoverIconSource: "qrc:/assets/toolbar-calendar-accent.svg"
+                                    activeIconSource: "qrc:/assets/toolbar-calendar-accent.svg"
+                                    onClicked: if (detailPane.note) root.notify(app.syncNoteTodosToSystemCalendar(detailPane.note.id))
+                                }
 
                                 ActionButton {
                                     label: "删除"
@@ -1385,7 +1460,8 @@ D.ApplicationWindow {
 			                                    Rectangle {
 		                                        Layout.preferredWidth: 16
 		                                        Layout.preferredHeight: 16
-		                                        Layout.alignment: Qt.AlignVCenter
+		                                        Layout.alignment: root.wrapTodos ? Qt.AlignTop : Qt.AlignVCenter
+		                                        Layout.topMargin: root.wrapTodos ? root.todoCheckboxTopMargin : 0
 		                                        radius: 4
 		                                        color: todoRow.done
 		                                               ? (root.lightTheme ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(1, 1, 1, 0.30))
@@ -1917,6 +1993,49 @@ D.ApplicationWindow {
             acceptedButtons: Qt.LeftButton
             preventStealing: true
             onClicked: menuItem.triggered()
+        }
+    }
+
+    component SidebarContextMenuItem: QQC.MenuItem {
+        id: menuItem
+        implicitWidth: 146
+        implicitHeight: 32
+        leftPadding: 0
+        rightPadding: 0
+        topPadding: 0
+        bottomPadding: 0
+
+        property string iconSource: ""
+
+        background: Rectangle {
+            radius: 6
+            antialiasing: true
+            color: menuItem.hovered
+                   ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.10))
+                   : "transparent"
+            Behavior on color { ColorAnimation { duration: 90 } }
+        }
+
+        contentItem: RowLayout {
+            spacing: 8
+
+            Image {
+                source: menuItem.iconSource
+                sourceSize.width: 16
+                sourceSize.height: 16
+                Layout.preferredWidth: 16
+                Layout.preferredHeight: 16
+                Layout.leftMargin: 9
+                opacity: menuItem.enabled ? 1 : 0.45
+            }
+
+            D.Label {
+                text: menuItem.text
+                color: root.textColor
+                font.pixelSize: 13
+                verticalAlignment: Text.AlignVCenter
+                Layout.fillWidth: true
+            }
         }
     }
 

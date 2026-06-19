@@ -9,6 +9,7 @@ Item {
     id: root
     width: 350
     height: 500
+    focus: true
 
     readonly property var hostWindow: Window.window
     readonly property bool systemLightTheme: D.ApplicationHelper.themeType === D.ApplicationHelper.LightType
@@ -20,6 +21,8 @@ Item {
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.30) : Qt.rgba(1, 1, 1, 0.30)
     property string pendingFocusId: ""
     property int pendingFocusIndex: -1
+    property int pendingFocusAttempts: 0
+    property var activeTodoEditor: null
     property string draggingTodoId: ""
     property int dragStartIndex: -1
     property int dragTargetIndex: -1
@@ -62,6 +65,8 @@ Item {
     property bool summaryTemplateDialogOpen: false
     property string summaryTemplateDraft: ""
     readonly property int rowDragStep: 36
+    readonly property real todoCheckboxTopMargin: 8
+    readonly property bool wrapTodos: app.todosWrapEnabled
 
     function priorityColor(priority) {
         if (priority === "red") return "#ff5f57"
@@ -196,10 +201,17 @@ Item {
         if (pendingFocusId.length === 0) {
             return
         }
+        if (pendingFocusAttempts > 24) {
+            pendingFocusId = ""
+            pendingFocusIndex = -1
+            pendingFocusAttempts = 0
+            return
+        }
         var foundIndex = indexOfTodo(pendingFocusId)
         if (foundIndex < 0) {
             return
         }
+        pendingFocusAttempts += 1
         pendingFocusIndex = foundIndex
         todoList.forceLayout()
         todoList.contentY = Math.max(0, Math.min(todoList.contentHeight - todoList.height, foundIndex * rowDragStep - todoList.height + 32))
@@ -226,7 +238,49 @@ Item {
         var id = noteController.addTodo(afterIndex === undefined ? -1 : afterIndex)
         pendingFocusId = id
         pendingFocusIndex = -1
+        pendingFocusAttempts = 0
         schedulePendingFocusReveal()
+    }
+
+    function ensureInitialTodoInput() {
+        if (noteTodosModel.count === 0) {
+            addTodo()
+            return
+        }
+        if (noteTodosModel.count === 1 && String(noteTodosModel.get(0).text || "").trim().length === 0) {
+            pendingFocusId = noteTodosModel.get(0).id
+            pendingFocusIndex = -1
+            pendingFocusAttempts = 0
+            schedulePendingFocusReveal()
+        }
+    }
+
+    function focusTodoEditor(todoId) {
+        if (!todoId || todoId.length === 0) {
+            return
+        }
+        pendingFocusId = todoId
+        pendingFocusIndex = -1
+        pendingFocusAttempts = 0
+        revealPendingFocus()
+        schedulePendingFocusReveal()
+    }
+
+    function pointInsideItem(item, localX, localY) {
+        if (!item) {
+            return false
+        }
+        var p = root.mapToItem(item, localX, localY)
+        return p.x >= 0 && p.x <= item.width && p.y >= 0 && p.y <= item.height
+    }
+
+    function clearTodoFocusIfOutside(localX, localY) {
+        var editor = activeTodoEditor
+        if (editor && !pointInsideItem(editor, localX, localY)) {
+            editor.cursorVisible = false
+            editor.focus = false
+            root.forceActiveFocus(Qt.MouseFocusReason)
+        }
     }
 
     function openSummaryTemplateDialog() {
@@ -246,7 +300,38 @@ Item {
         summaryTemplateWindow.y = Math.round((Screen.height - summaryTemplateWindow.height) / 2)
     }
 
-    Component.onCompleted: syncNoteTodos(true)
+    Component.onCompleted: {
+        syncNoteTodos(true)
+        initialTodoInputTimer.restart()
+    }
+
+    Connections {
+        target: root.hostWindow
+        function onVisibleChanged() {
+            if (root.hostWindow && root.hostWindow.visible) {
+                initialTodoInputTimer.restart()
+            }
+        }
+        function onActiveChanged() {
+            if (root.hostWindow && root.hostWindow.active && root.pendingFocusId.length > 0) {
+                pendingFocusRetryTimer.restart()
+            }
+        }
+    }
+
+    Timer {
+        id: initialTodoInputTimer
+        interval: 160
+        repeat: false
+        onTriggered: root.ensureInitialTodoInput()
+    }
+
+    Timer {
+        id: pendingFocusRetryTimer
+        interval: 80
+        repeat: false
+        onTriggered: root.revealPendingFocus()
+    }
 
     Connections {
         target: noteController
@@ -503,7 +588,7 @@ Item {
                 delegate: Item {
                     id: row
                     width: todoList.width
-                    height: 32
+                    height: root.wrapTodos ? Math.max(32, todoEdit.contentHeight + 8) : 32
                     z: isDraggingThis ? 60 : (priorityMenu.visible ? 20 : 1)
 
                     property bool confirmingDelete: false
@@ -544,10 +629,20 @@ Item {
                     function focusIfPending() {
                         if (model.id === appRoot.pendingFocusId) {
                             Qt.callLater(function() {
+                                if (root.hostWindow) {
+                                    root.hostWindow.requestActivate()
+                                }
                                 todoEdit.forceActiveFocus()
                                 todoEdit.selectAll()
-                                row.appRoot.pendingFocusId = ""
-                                row.appRoot.pendingFocusIndex = -1
+                                Qt.callLater(function() {
+                                    if (todoEdit.activeFocus) {
+                                        row.appRoot.pendingFocusId = ""
+                                        row.appRoot.pendingFocusIndex = -1
+                                        row.appRoot.pendingFocusAttempts = 0
+                                    } else if (row.appRoot.pendingFocusId === model.id) {
+                                        pendingFocusRetryTimer.restart()
+                                    }
+                                })
                             })
                         }
                     }
@@ -706,7 +801,8 @@ Item {
                             id: checkbox
                             Layout.preferredWidth: 16
                             Layout.preferredHeight: 16
-                            Layout.alignment: Qt.AlignVCenter
+                            Layout.alignment: root.wrapTodos ? Qt.AlignTop : Qt.AlignVCenter
+                            Layout.topMargin: root.wrapTodos ? root.todoCheckboxTopMargin : 0
                             radius: 4
                             color: row.done ? (root.lightTheme ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(1, 1, 1, 0.30)) : "transparent"
                             border.width: 1.2
@@ -729,15 +825,17 @@ Item {
                             }
                         }
 
-                        TextField {
+                        TextEdit {
                             id: todoEdit
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 24
+                            Layout.minimumWidth: 0
+                            Layout.preferredHeight: root.wrapTodos ? Math.max(24, contentHeight + 2) : 24
                             property bool removedByEditor: false
+                            property bool skipNextBlurFinish: false
                             text: model.text || ""
-                            placeholderText: "新待办"
-                            placeholderTextColor: root.mutedColor
                             selectByMouse: true
+                            wrapMode: root.wrapTodos ? TextEdit.Wrap : TextEdit.NoWrap
+                            cursorVisible: activeFocus
                             color: row.done ? root.mutedColor : root.textColor
                             font.pixelSize: 13
                             font.strikeout: row.done
@@ -745,11 +843,34 @@ Item {
                             rightPadding: 0
                             topPadding: 0
                             bottomPadding: 0
-                            verticalAlignment: TextInput.AlignVCenter
-                            background: Item {}
+                            Keys.priority: Keys.BeforeItem
                             Component.onCompleted: cursorPosition = 0
-                            onTextChanged: if (!activeFocus) cursorPosition = 0
-                            onActiveFocusChanged: if (!activeFocus) cursorPosition = 0
+                            onTextChanged: {
+                                if (activeFocus && (text.indexOf("\n") >= 0 || text.indexOf("\r") >= 0)) {
+                                    text = text.replace(/[\r\n]+/g, "")
+                                    cursorPosition = text.length
+                                    finishEditing(true)
+                                    return
+                                }
+                                if (!activeFocus) {
+                                    cursorPosition = 0
+                                }
+                            }
+                            onActiveFocusChanged: {
+                                if (activeFocus) {
+                                    root.activeTodoEditor = todoEdit
+                                } else {
+                                    if (root.activeTodoEditor === todoEdit) {
+                                        root.activeTodoEditor = null
+                                    }
+                                    cursorPosition = 0
+                                    if (skipNextBlurFinish) {
+                                        skipNextBlurFinish = false
+                                        return
+                                    }
+                                    finishEditing(false)
+                                }
+                            }
 
                             function finishEditing(createNext) {
                                 if (removedByEditor) {
@@ -760,33 +881,44 @@ Item {
                                     noteController.deleteTodo(row.modelIndex)
                                     return
                                 }
-                                noteController.commitTodoText(row.modelIndex, text)
                                 if (createNext) {
-                                    row.appRoot.addTodo(row.modelIndex)
+                                    skipNextBlurFinish = true
+                                    var nextId = noteController.commitTodoTextAndAddNext(row.modelIndex, text)
+                                    row.appRoot.focusTodoEditor(nextId)
+                                } else {
+                                    noteController.commitTodoText(row.modelIndex, text)
                                 }
                             }
 
-                            onAccepted: {
-                                finishEditing(true)
-                            }
-                            Keys.onReturnPressed: function(event) {
-                                finishEditing(true)
-                                event.accepted = true
-                            }
-                            Keys.onEnterPressed: function(event) {
-                                finishEditing(true)
-                                event.accepted = true
-                            }
-                            onEditingFinished: {
-                                finishEditing(false)
-                            }
-                            Keys.onEscapePressed: function(event) {
-                                if (text.trim().length === 0) {
-                                    finishEditing(false)
-                                } else {
-                                    focus = false
+                            Keys.onPressed: function(event) {
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                    if (root.wrapTodos && (event.modifiers & Qt.ShiftModifier)) {
+                                        event.accepted = false
+                                        return
+                                    }
+                                    finishEditing(true)
+                                    event.accepted = true
+                                    return
                                 }
-                                event.accepted = true
+                                if (event.key === Qt.Key_Escape) {
+                                    if (text.trim().length === 0) {
+                                        finishEditing(false)
+                                    } else {
+                                        focus = false
+                                    }
+                                    event.accepted = true
+                                }
+                            }
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: todoEdit.leftPadding
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: todoEdit.text.length === 0
+                                text: "新待办"
+                                color: root.mutedColor
+                                font.pixelSize: todoEdit.font.pixelSize
+                                font.family: todoEdit.font.family
                             }
                         }
 
@@ -936,6 +1068,17 @@ Item {
                     color: root.mutedColor
                     font.pixelSize: 11
                 }
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            z: 10000
+            acceptedButtons: Qt.LeftButton
+            propagateComposedEvents: true
+            onPressed: function(mouse) {
+                root.clearTodoFocusIfOutside(mouse.x, mouse.y)
+                mouse.accepted = false
             }
         }
 

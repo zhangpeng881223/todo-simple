@@ -10,13 +10,15 @@ Rectangle {
     property bool hovered: false
     property bool active: false
     property bool pressed: false
-    property real density: variant === "window" ? 0.18 : (variant === "frosted" ? 0.22 : (variant === "panel" ? 0.34 : 0.68))
+    property bool blurEnabled: true
+    property real protection: 0
+    property real density: variant === "window" ? 0.18 : (variant === "readability" ? 0.14 : (variant === "frosted" ? 0.22 : (variant === "panel" ? 0.34 : 0.68)))
     property real tintOpacity: lightTheme ? (variant === "window" ? 0.30 : 0.34) : (variant === "window" ? 0.46 : 0.18)
     property real edgeOpacity: lightTheme ? 0.48 : 0.18
     property real highlightOpacity: lightTheme ? 0.46 : 0.16
     property real glowOpacity: active ? 0.30 : (hovered ? 0.20 : 0.08)
-    property real lensOpacity: variant === "window" ? 0.12 : (variant === "frosted" ? 0.04 : (variant === "panel" ? 0.22 : 0.38))
-    property real chromaOpacity: variant === "window" ? 0.025 : (variant === "frosted" ? 0 : (variant === "panel" ? 0.055 : 0.080))
+    property real lensOpacity: variant === "window" ? 0.12 : (variant === "readability" ? 0 : (variant === "frosted" ? 0.04 : (variant === "panel" ? 0.22 : 0.38)))
+    property real chromaOpacity: variant === "window" ? 0.025 : (variant === "readability" ? 0 : (variant === "frosted" ? 0 : (variant === "panel" ? 0.055 : 0.080)))
     property real thicknessOpacity: variant === "panel" ? 0.36 : 0.18
     property color tintColor: lightTheme ? Qt.rgba(1, 1, 1, tintOpacity)
                                       : Qt.rgba(1, 1, 1, tintOpacity)
@@ -28,10 +30,28 @@ Rectangle {
     property real pressProgress: pressed ? 1 : 0
     property real shimmer: 0
     readonly property bool frostedMode: variant === "frosted"
+    readonly property bool readabilityMode: variant === "readability"
     readonly property bool windowMode: variant === "window"
     readonly property real panelMode: variant === "panel" || variant === "frosted" ? 1 : 0
-    readonly property bool opticsMode: !frostedMode && !windowMode
+    readonly property bool opticsMode: !frostedMode && !windowMode && !readabilityMode
     readonly property real effectiveDensity: Math.min(1, Math.max(0, density + hoverProgress * 0.16 + pressProgress * 0.08))
+
+    function outlineColor() {
+        if (surface.lightTheme) {
+            if (surface.windowMode)
+                return Qt.rgba(1, 1, 1, 0.24)
+            if (surface.readabilityMode)
+                return Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.18))
+            if (surface.frostedMode)
+                return Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.34))
+            return Qt.rgba(1, 1, 1, surface.edgeOpacity)
+        }
+        if (surface.windowMode)
+            return Qt.rgba(1, 1, 1, 0.10)
+        if (surface.readabilityMode)
+            return Qt.rgba(1, 1, 1, Math.max(0.05, surface.edgeOpacity))
+        return Qt.rgba(1, 1, 1, Math.max(0.08, surface.edgeOpacity))
+    }
 
     color: "transparent"
     border.width: 0
@@ -42,6 +62,9 @@ Rectangle {
     Behavior on hoverProgress { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
     Behavior on pressProgress { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+    Behavior on protection { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+    Behavior on tintColor { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
+    Behavior on blendColor { ColorAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
     NumberAnimation on shimmer {
         from: 0
@@ -51,19 +74,25 @@ Rectangle {
         running: surface.visible && surface.opticsMode && (surface.hovered || surface.active || surface.pressed)
     }
 
-    D.StyledBehindWindowBlur {
-        control: surface
+    Loader {
+        id: blurLoader
         anchors.fill: parent
-        cornerRadius: surface.radius
-        blendColor: valid ? surface.blendColor : surface.tintColor
-        visible: true
+        active: surface.blurEnabled
+        sourceComponent: Component {
+            D.StyledBehindWindowBlur {
+                control: surface
+                anchors.fill: parent
+                cornerRadius: surface.radius
+                blendColor: valid ? surface.blendColor : surface.tintColor
+            }
+        }
     }
 
     Rectangle {
         anchors.fill: parent
         radius: surface.radius
         antialiasing: true
-        visible: surface.windowMode
+        visible: surface.windowMode || (surface.readabilityMode && (!surface.blurEnabled || !blurLoader.item || !blurLoader.item.valid))
         color: surface.tintColor
     }
 
@@ -71,7 +100,7 @@ Rectangle {
         anchors.fill: parent
         radius: surface.radius
         antialiasing: true
-        visible: !surface.windowMode
+        visible: !surface.windowMode && !surface.readabilityMode
         gradient: Gradient {
             orientation: Gradient.Vertical
             GradientStop {
@@ -344,13 +373,7 @@ Rectangle {
         radius: surface.radius
         color: "transparent"
         border.width: 1
-        border.color: surface.lightTheme
-                      ? (surface.windowMode
-                         ? Qt.rgba(1, 1, 1, 0.24)
-                         : (surface.frostedMode ? Qt.rgba(1, 1, 1, Math.min(surface.edgeOpacity, 0.34))
-                                                : Qt.rgba(1, 1, 1, surface.edgeOpacity)))
-                      : (surface.windowMode ? Qt.rgba(1, 1, 1, 0.10)
-                                            : Qt.rgba(1, 1, 1, Math.max(0.08, surface.edgeOpacity)))
+        border.color: surface.outlineColor()
         antialiasing: true
     }
 
@@ -359,7 +382,7 @@ Rectangle {
         anchors.margins: 1
         radius: Math.max(0, surface.radius - 1)
         color: "transparent"
-        border.width: surface.frostedMode || surface.windowMode ? 0 : 1
+        border.width: surface.frostedMode || surface.windowMode || surface.readabilityMode ? 0 : 1
         border.color: surface.lightTheme
                       ? Qt.rgba(0, 0, 0, surface.variant === "panel" ? 0.036 : 0.060 + surface.hoverProgress * 0.030)
                       : Qt.rgba(0, 0, 0, 0.14)
@@ -375,7 +398,7 @@ Rectangle {
         anchors.topMargin: 1
         height: 1
         radius: 1
-        opacity: surface.frostedMode || surface.windowMode ? 0 : (surface.lightTheme ? (surface.panelMode ? 0.32 : 0.58) : 0.10)
+        opacity: surface.frostedMode || surface.windowMode || surface.readabilityMode ? 0 : (surface.lightTheme ? (surface.panelMode ? 0.32 : 0.58) : 0.10)
         color: Qt.rgba(1, 1, 1, 0.90)
     }
 
@@ -383,7 +406,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: surface.frostedMode || surface.windowMode ? 0 : (surface.panelMode ? 12 : 5)
+        height: surface.frostedMode || surface.windowMode || surface.readabilityMode ? 0 : (surface.panelMode ? 12 : 5)
         radius: surface.radius
         color: surface.lightTheme
                ? Qt.rgba(0, 0, 0, surface.panelMode ? 0.018 : 0.030 + surface.hoverProgress * 0.018)
@@ -397,7 +420,7 @@ Rectangle {
         anchors.margins: rimInset
         radius: Math.max(0, surface.radius - rimInset)
         color: "transparent"
-        border.width: surface.windowMode ? 0 : (surface.hoverProgress > 0.01 || surface.active ? 1 : 0)
+        border.width: surface.windowMode || surface.readabilityMode ? 0 : (surface.hoverProgress > 0.01 || surface.active ? 1 : 0)
         border.color: surface.active
                       ? Qt.rgba(46 / 255, 163 / 255, 1, 0.32)
                       : Qt.rgba(1, 1, 1, surface.glowOpacity)

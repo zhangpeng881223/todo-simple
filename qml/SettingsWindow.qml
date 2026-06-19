@@ -12,13 +12,17 @@ Item {
     readonly property var hostWindow: Window.window
     readonly property bool lightTheme: app.theme === "light"
     readonly property color windowColor: lightTheme ? "#f7f8fa" : "#202124"
+    readonly property color sidebarPanelColor: lightTheme ? "#ffffff" : "#2b2c2f"
+    readonly property color contentPanelColor: lightTheme ? "#f7f8fa" : "#202124"
     readonly property color panelColor: lightTheme ? "#ffffff" : "#2b2c2f"
-    readonly property color navColor: lightTheme ? "#f1f2f4" : "#26272a"
+    readonly property color navColor: sidebarPanelColor
     readonly property color textColor: lightTheme ? "#242628" : "#f5f5f5"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.48) : Qt.rgba(1, 1, 1, 0.46)
     readonly property color borderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10)
     readonly property color rowLine: lightTheme ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.065)
     readonly property color controlBase: lightTheme ? "#f2f3f5" : "#35363a"
+    readonly property color sliderTrackColor: lightTheme ? Qt.rgba(0, 0, 0, 0.14) : Qt.rgba(1, 1, 1, 0.20)
+    readonly property color sliderHandleColor: lightTheme ? "#ffffff" : "#f0f1f3"
     readonly property color accentColor: "#2d8cff"
     property int activeIndex: 0
     property string aiScope: "note"
@@ -26,6 +30,7 @@ Item {
     property bool aiDirty: false
     property string syncedTheme: ""
     property string toastMessage: ""
+    property int easterEggClickCount: 0
 
     function notify(message) {
         var text = String(message || "")
@@ -50,11 +55,34 @@ Item {
     }
 
     function resetMainWindowAlpha() {
+        if (!root.lightTheme) {
+            app.updateSetting("mainWindowOpacity", 0.37)
+            app.updateSetting("mainRightPanelOpacity", 0.26)
+            app.updateSetting("mainWallpaperBlur", 0.7)
+        } else if (app.mainWallpaperMode === "default") {
+            app.updateSetting("mainWindowOpacity", 0.405)
+            app.updateSetting("mainRightPanelOpacity", 0.7)
+            app.updateSetting("mainWallpaperBlur", 0.75)
+        } else {
+            app.updateSetting("mainWindowOpacity", 0.3)
+            app.updateSetting("mainRightPanelOpacity", 0.8)
+            app.updateSetting("mainWallpaperBlur", 0.3)
+        }
         app.updateSetting("mainDefaultTodoAlphaLight", 0.445)
         app.updateSetting("mainPriorityTodoAlphaLight", 0.275)
         app.updateSetting("mainDefaultTodoAlphaDark", 0.13)
         app.updateSetting("mainPriorityTodoAlphaDark", 0.21)
         notify("主窗口样式已恢复默认")
+    }
+
+    function selectSystemWallpaper() {
+        app.setMainWallpaperMode("system")
+        notify("主窗口背景已跟随系统壁纸")
+    }
+
+    function selectDefaultWallpaper() {
+        app.setMainWallpaperMode("default")
+        notify("已切换为默认背景图片")
     }
 
     function aiScopeName(scope) {
@@ -92,18 +120,18 @@ Item {
         anchors.fill: parent
         radius: 12
         antialiasing: true
-        color: root.windowColor
+        color: root.sidebarPanelColor
         border.width: 1
         border.color: root.borderColor
         clip: true
 
-        ColumnLayout {
+        RowLayout {
             anchors.fill: parent
             spacing: 0
 
             Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 52
+                Layout.preferredWidth: 176
+                Layout.fillHeight: true
 
                 DragHandler {
                     target: null
@@ -111,11 +139,13 @@ Item {
                     onActiveChanged: if (active && root.hostWindow) root.hostWindow.startSystemMove()
                 }
 
-                RowLayout {
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 18
+                    anchors.leftMargin: 14
                     anchors.rightMargin: 14
-                    spacing: 8
+                    anchors.topMargin: 16
+                    anchors.bottomMargin: 14
+                    spacing: 6
 
                     D.Label {
                         Layout.fillWidth: true
@@ -123,60 +153,80 @@ Item {
                         color: root.textColor
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
+                        Layout.bottomMargin: 8
                         elide: Text.ElideRight
                     }
 
-                    HeaderToolButton {
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 28
-                        text: "×"
-                        textSize: 19
-                        hoverColor: "#ff5f57"
-                        onClicked: if (root.hostWindow) root.hostWindow.close()
-                    }
+                    NavButton { text: "主窗口"; index: 0; iconName: "main-window" }
+                    NavButton { text: "桌面待办"; index: 1; iconName: "desktop-todo" }
+                    NavButton { text: "AI总结"; index: 2; iconName: "ai-summary" }
+                    NavButton { text: "数据存储"; index: 3; iconName: "data-storage" }
+                    NavButton { text: "彩蛋"; index: 4; iconName: "easter-egg" }
+                    Item { Layout.fillHeight: true }
                 }
             }
 
-            RowLayout {
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.leftMargin: 14
-                Layout.rightMargin: 14
-                Layout.bottomMargin: 14
-                spacing: 14
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+                Layout.topMargin: 0
+                Layout.bottomMargin: 0
+                radius: 12
+                antialiasing: true
+                clip: true
+                color: root.contentPanelColor
+                border.width: 1
+                border.color: root.borderColor
 
-                Rectangle {
-                    Layout.preferredWidth: 166
-                    Layout.fillHeight: true
-                    radius: 10
-                    color: root.navColor
-                    border.width: 1
-                    border.color: root.borderColor
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 4
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 52
 
-                        NavButton { text: "主窗口样式"; index: 0 }
-                        NavButton { text: "桌面待办样式"; index: 1 }
-                        NavButton { text: "AI总结"; index: 2 }
-                        NavButton { text: "数据存储"; index: 3 }
-                        NavButton { text: "彩蛋"; index: 4 }
-                        Item { Layout.fillHeight: true }
+                        DragHandler {
+                            target: null
+                            acceptedButtons: Qt.LeftButton
+                            onActiveChanged: if (active && root.hostWindow) root.hostWindow.startSystemMove()
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 14
+                            spacing: 8
+
+                            Item { Layout.fillWidth: true }
+
+                            HeaderToolButton {
+                                Layout.preferredWidth: 28
+                                Layout.preferredHeight: 28
+                                text: "×"
+                                textSize: 19
+                                hoverColor: "#ff5f57"
+                                onClicked: if (root.hostWindow) root.hostWindow.close()
+                            }
+                        }
                     }
-                }
 
-                StackLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    currentIndex: root.activeIndex
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.leftMargin: 18
+                        Layout.rightMargin: 18
+                        Layout.bottomMargin: 16
+                        currentIndex: root.activeIndex
 
-                    MainWindowStylePage {}
-                    DesktopTodoStylePage {}
-                    AiSummaryPage {}
-                    DataStoragePage {}
-                    EasterEggPage {}
+                        MainWindowStylePage {}
+                        DesktopTodoStylePage {}
+                        AiSummaryPage {}
+                        DataStoragePage {}
+                        EasterEggPage {}
+                    }
                 }
             }
         }
@@ -186,6 +236,12 @@ Item {
         id: toastTimer
         interval: 1600
         onTriggered: root.toastMessage = ""
+    }
+
+    Timer {
+        id: easterEggClickTimer
+        interval: 1800
+        onTriggered: root.easterEggClickCount = 0
     }
 
     Rectangle {
@@ -238,18 +294,35 @@ Item {
     component NavButton: QQC.Button {
         id: navButton
         property int index: 0
+        property string iconName: ""
         Layout.fillWidth: true
         Layout.preferredHeight: 38
         hoverEnabled: true
         onClicked: root.activeIndex = index
 
-        contentItem: D.Label {
-            text: navButton.text
-            color: root.activeIndex === navButton.index ? "#ffffff" : root.textColor
-            font.pixelSize: 13
-            font.weight: root.activeIndex === navButton.index ? Font.DemiBold : Font.Normal
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
+        contentItem: RowLayout {
+            spacing: 8
+
+            Image {
+                Layout.preferredWidth: 16
+                Layout.preferredHeight: 16
+                source: "qrc:/assets/settings-" + navButton.iconName + "-"
+                        + (root.activeIndex === navButton.index ? "active" : root.lightTheme ? "dark" : "light") + ".svg"
+                sourceSize.width: 16
+                sourceSize.height: 16
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+            }
+
+            D.Label {
+                Layout.fillWidth: true
+                text: navButton.text
+                color: root.activeIndex === navButton.index ? "#ffffff" : root.textColor
+                font.pixelSize: 13
+                font.weight: root.activeIndex === navButton.index ? Font.DemiBold : Font.Normal
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
         }
 
         background: Rectangle {
@@ -320,11 +393,70 @@ Item {
         }
     }
 
+    component SectionBlock: ColumnLayout {
+        id: sectionBlock
+        property string title: ""
+        property string desc: ""
+        property Component action
+        default property alias content: sectionBlockColumn.data
+        Layout.fillWidth: true
+        spacing: 6
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+
+            D.Label {
+                Layout.fillWidth: true
+                text: sectionBlock.title
+                color: root.textColor
+                font.pixelSize: 14
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+
+            Loader {
+                Layout.preferredWidth: item ? item.implicitWidth : 0
+                Layout.preferredHeight: item ? item.implicitHeight : 0
+                sourceComponent: sectionBlock.action
+            }
+        }
+
+        D.Label {
+            Layout.fillWidth: true
+            visible: sectionBlock.desc.length > 0
+            text: sectionBlock.desc
+            color: root.mutedColor
+            font.pixelSize: 12
+            wrapMode: Text.WordWrap
+            Layout.bottomMargin: visible ? 2 : 0
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: sectionBlockColumn.implicitHeight + 24
+            radius: 10
+            color: root.panelColor
+            border.width: 1
+            border.color: root.borderColor
+
+            ColumnLayout {
+                id: sectionBlockColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 12
+                spacing: 0
+            }
+        }
+    }
+
     component SettingRow: Item {
         id: row
         property string title: ""
         property string desc: ""
         property Component control
+        property bool showLine: true
         Layout.fillWidth: true
         Layout.preferredHeight: Math.max(64, controlLoader.item ? controlLoader.item.implicitHeight + 18 : 64)
 
@@ -366,6 +498,7 @@ Item {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 1
+            visible: row.showLine
             color: root.rowLine
         }
     }
@@ -375,6 +508,7 @@ Item {
         property string label: ""
         property string keyName: ""
         property real settingValue: 0
+        property real maxValue: 0.6
         Layout.fillWidth: true
         implicitWidth: 430
         implicitHeight: 32
@@ -388,14 +522,12 @@ Item {
             elide: Text.ElideRight
         }
 
-        QQC.Slider {
+        ThemedSlider {
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
             from: 0
-            to: 0.6
+            to: alphaRow.maxValue
             stepSize: 0.005
             value: alphaRow.settingValue
-            live: true
             onMoved: root.setAlpha(alphaRow.keyName, value)
         }
 
@@ -405,6 +537,69 @@ Item {
             color: root.mutedColor
             font.pixelSize: 12
             horizontalAlignment: Text.AlignRight
+        }
+    }
+
+    component ThemedSlider: QQC.Slider {
+        id: slider
+        implicitHeight: 28
+        hoverEnabled: true
+        live: true
+
+        background: Item {
+            x: slider.leftPadding
+            y: Math.round(slider.topPadding + (slider.availableHeight - height) / 2)
+            width: slider.availableWidth
+            height: 4
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 2
+                color: root.sliderTrackColor
+            }
+
+            Rectangle {
+                width: slider.visualPosition * parent.width
+                height: parent.height
+                radius: 2
+                color: root.accentColor
+            }
+        }
+
+        handle: Rectangle {
+            x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
+            y: slider.topPadding + Math.round((slider.availableHeight - height) / 2)
+            width: 16
+            height: 16
+            radius: 8
+            color: root.sliderHandleColor
+            border.width: 1
+            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.18) : Qt.rgba(1, 1, 1, 0.24)
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: 6
+                height: 6
+                radius: 3
+                color: slider.pressed || slider.hovered ? root.accentColor : "transparent"
+            }
+        }
+    }
+
+    component BackgroundRadioOption: D.RadioButton {
+        id: option
+        property bool optionChecked: false
+        implicitHeight: 30
+        hoverEnabled: false
+        checked: option.optionChecked
+        spacing: 6
+
+        contentItem: D.Label {
+            text: option.text
+            color: root.textColor
+            font.pixelSize: 13
+            leftPadding: 24
+            verticalAlignment: Text.AlignVCenter
         }
     }
 
@@ -556,33 +751,50 @@ Item {
         }
     }
 
-    component DataButton: D.Button {
+    component DataButton: QQC.Button {
         id: dataButton
         property string assetName: ""
+        implicitWidth: Math.max(112, dataContent.implicitWidth + 28)
         implicitHeight: 36
-        icon.name: ""
+        hoverEnabled: true
 
-        contentItem: Row {
-            spacing: 7
-            anchors.centerIn: parent
+        contentItem: Item {
+            implicitWidth: dataContent.implicitWidth
+            implicitHeight: dataContent.implicitHeight
 
-            Image {
-                width: 16
-                height: 16
-                anchors.verticalCenter: parent.verticalCenter
-                source: "qrc:/assets/" + dataButton.assetName + "-" + (root.lightTheme ? "dark" : "light") + ".svg"
-                sourceSize.width: 16
-                sourceSize.height: 16
-                visible: dataButton.assetName.length > 0
-                opacity: 0.82
+            Row {
+                id: dataContent
+                anchors.centerIn: parent
+                spacing: 7
+
+                Image {
+                    width: 16
+                    height: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: "qrc:/assets/" + dataButton.assetName + "-" + (root.lightTheme ? "dark" : "light") + ".svg"
+                    sourceSize.width: 16
+                    sourceSize.height: 16
+                    visible: dataButton.assetName.length > 0
+                    opacity: 0.82
+                }
+
+                D.Label {
+                    text: dataButton.text
+                    color: root.textColor
+                    font.pixelSize: 13
+                    anchors.verticalCenter: parent.verticalCenter
+                }
             }
+        }
 
-            D.Label {
-                text: dataButton.text
-                color: root.textColor
-                font.pixelSize: 13
-                anchors.verticalCenter: parent.verticalCenter
-            }
+        background: Rectangle {
+            radius: 8
+            color: dataButton.pressed
+                ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.14))
+                : dataButton.hovered ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.10))
+                                     : root.controlBase
+            border.width: 1
+            border.color: dataButton.activeFocus ? root.accentColor : root.borderColor
         }
     }
 
@@ -629,44 +841,67 @@ Item {
 
     component MainWindowStylePage: PageShell {
         PageTitle {
-            title: "主窗口样式"
-            desc: "调整主窗口右侧待办条目的底色透明度。"
+            title: "主窗口"
+            desc: "调整主窗口背景、玻璃层透明度和待办底色透明度。"
         }
 
-        SectionCard {
+        SectionBlock {
+            title: "主窗口背景设置"
+            desc: "选择主窗口底层背景来源。"
+
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 10
+                spacing: 16
 
-                D.Label {
-                    Layout.fillWidth: true
-                    text: "待办底色透明度"
-                    color: root.textColor
-                    font.pixelSize: 14
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
+                BackgroundRadioOption {
+                    text: "默认壁纸"
+                    optionChecked: app.mainWallpaperMode === "default"
+                    onClicked: root.selectDefaultWallpaper()
                 }
 
-                D.Button {
-                    Layout.preferredWidth: 92
-                    Layout.preferredHeight: 32
-                    text: "恢复默认"
-                    onClicked: root.resetMainWindowAlpha()
+                BackgroundRadioOption {
+                    text: "跟随系统壁纸"
+                    optionChecked: app.mainWallpaperMode === "system"
+                    onClicked: root.selectSystemWallpaper()
+                }
+
+                BackgroundRadioOption {
+                    text: "手动上传背景图片"
+                    optionChecked: app.mainWallpaperMode === "custom"
+                    onClicked: {
+                        var message = app.chooseMainWindowWallpaper()
+                        root.notify(message)
+                    }
                 }
             }
+        }
 
-            D.Label {
-                Layout.fillWidth: true
-                Layout.topMargin: 4
-                text: "分别控制浅色/深色模式下默认和优先级待办底色。"
-                color: root.mutedColor
-                font.pixelSize: 12
-                elide: Text.ElideRight
+        SectionBlock {
+            title: "主窗口透明度设置"
+            desc: "控制主窗口底层玻璃、右侧工作区浮层和背景模糊程度。"
+            action: D.Button {
+                implicitWidth: 92
+                implicitHeight: 32
+                text: "恢复默认"
+                onClicked: root.resetMainWindowAlpha()
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.topMargin: 16
+                spacing: 4
+
+                AlphaRow { label: "主窗口透明度"; keyName: "mainWindowOpacity"; settingValue: app.mainWindowOpacity; maxValue: 1.0 }
+                AlphaRow { label: "右侧浮层透明度"; keyName: "mainRightPanelOpacity"; settingValue: app.mainRightPanelOpacity; maxValue: 0.8 }
+                AlphaRow { label: "背景模糊度"; keyName: "mainWallpaperBlur"; settingValue: app.mainWallpaperBlur; maxValue: 1.0 }
+            }
+        }
+
+        SectionBlock {
+            title: "待办底色透明度设置"
+            desc: "分别控制浅色/深色模式下默认和优先级待办底色。"
+
+            ColumnLayout {
+                Layout.fillWidth: true
                 spacing: 14
 
                 AlphaGroup {
@@ -686,11 +921,12 @@ Item {
 
     component DesktopTodoStylePage: PageShell {
         PageTitle {
-            title: "桌面待办样式"
-            desc: "控制桌面便签窗口的颜色、透明度和优先级显示方式。"
+            title: "桌面待办"
+            desc: "控制桌面便签窗口的颜色、透明度、换行和优先级显示方式。"
         }
 
-        SectionCard {
+        SectionBlock {
+            title: "桌面待办设置"
             SettingRow {
                 title: "待办窗口颜色"
                 desc: "选择桌面待办窗口外观，或跟随主窗口主题"
@@ -712,15 +948,13 @@ Item {
                     implicitHeight: 34
                     spacing: 10
 
-                    QQC.Slider {
+                    ThemedSlider {
                         Layout.preferredWidth: 168
-                        Layout.preferredHeight: 28
                         Layout.alignment: Qt.AlignVCenter
                         from: 0
                         to: 100
                         stepSize: 1
                         value: app.opacity
-                        live: true
                         onMoved: app.updateSetting("opacity", Math.round(value))
                     }
 
@@ -738,8 +972,21 @@ Item {
             }
 
             SettingRow {
+                title: "允许待办换行"
+                desc: "开启后主窗口和桌面待办里的待办内容都会自动换行"
+                control: D.Switch {
+                    checked: app.todosWrapEnabled
+                    onToggled: {
+                        app.updateSetting("todosWrapEnabled", checked)
+                        root.notify(checked ? "已允许待办换行" : "已关闭待办换行")
+                    }
+                }
+            }
+
+            SettingRow {
                 title: "优先级样式"
                 desc: "多彩模式显示彩色底色，简约模式只保留线性提示"
+                showLine: false
                 control: CompactComboBox {
                     model: ["多彩", "简约"]
                     currentIndex: app.priorityStyle === "simple" ? 1 : 0
@@ -758,7 +1005,8 @@ Item {
             desc: "分别维护本条、本周、本月总结提示词。保存后总结入口会使用对应模板。"
         }
 
-        SectionCard {
+        SectionBlock {
+            title: "提示词模板"
             RowLayout {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 12
@@ -840,7 +1088,8 @@ Item {
             desc: "查看本机永久存储路径，并导入或导出全部待办数据。"
         }
 
-        SectionCard {
+        SectionBlock {
+            title: "数据存储设置"
             SettingRow {
                 title: "存储路径"
                 desc: "当前数据文件所在位置"
@@ -867,14 +1116,12 @@ Item {
                 spacing: 12
 
                 DataButton {
-                    Layout.preferredWidth: 128
                     text: "导出数据"
                     assetName: "data-export"
                     onClicked: root.notify(app.exportData())
                 }
 
                 DataButton {
-                    Layout.preferredWidth: 128
                     text: "导入数据"
                     assetName: "data-import"
                     onClicked: root.notify(app.importData())
@@ -900,14 +1147,45 @@ Item {
             width: Math.min(parent.width - 80, 420)
             spacing: 14
 
-            D.Label {
+            RowLayout {
                 Layout.fillWidth: true
-                text: "阿弥陀佛，算法自然"
-                color: root.textColor
-                font.pixelSize: 28
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
+                spacing: 0
+
+                Item { Layout.fillWidth: true }
+
+                D.Label {
+                    text: "阿弥陀佛，"
+                    color: root.textColor
+                    font.pixelSize: 28
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                D.Label {
+                    id: algorithmNatureLabel
+                    text: "算法自然"
+                    color: root.textColor
+                    font.pixelSize: 28
+                    font.weight: Font.DemiBold
+                    verticalAlignment: Text.AlignVCenter
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.easterEggClickCount += 1
+                            if (root.easterEggClickCount >= 9) {
+                                root.easterEggClickCount = 0
+                                easterEggClickTimer.stop()
+                                app.triggerFireworksEffect()
+                            } else {
+                                easterEggClickTimer.restart()
+                            }
+                        }
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
             }
 
             D.Label {

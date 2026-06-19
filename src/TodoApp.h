@@ -1,18 +1,21 @@
 #pragma once
 
 #include <QObject>
+#include <QRect>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QPointer>
 #include <QQuickView>
 #include <QQmlEngine>
 #include <QSystemTrayIcon>
+#include <QUrl>
 #include <QVariantList>
 #include <DGuiApplicationHelper>
 
 // Calendar/event editor is parked for the current version.
 // class EventEditorController;
 class NoteController;
+class QFileSystemWatcher;
 class QMenu;
 class QTimer;
 class QWindow;
@@ -25,12 +28,20 @@ class TodoApp : public QObject
     Q_PROPERTY(QString theme READ theme NOTIFY settingsChanged)
     Q_PROPERTY(QString noteTheme READ noteTheme NOTIFY settingsChanged)
     Q_PROPERTY(QString priorityStyle READ priorityStyle NOTIFY settingsChanged)
+    Q_PROPERTY(bool todosWrapEnabled READ todosWrapEnabled NOTIFY settingsChanged)
     Q_PROPERTY(int opacity READ opacity NOTIFY settingsChanged)
     Q_PROPERTY(QString storagePath READ storagePath CONSTANT)
     Q_PROPERTY(double mainDefaultTodoAlphaLight READ mainDefaultTodoAlphaLight NOTIFY settingsChanged)
     Q_PROPERTY(double mainPriorityTodoAlphaLight READ mainPriorityTodoAlphaLight NOTIFY settingsChanged)
     Q_PROPERTY(double mainDefaultTodoAlphaDark READ mainDefaultTodoAlphaDark NOTIFY settingsChanged)
     Q_PROPERTY(double mainPriorityTodoAlphaDark READ mainPriorityTodoAlphaDark NOTIFY settingsChanged)
+    Q_PROPERTY(double mainWindowOpacity READ mainWindowOpacity NOTIFY settingsChanged)
+    Q_PROPERTY(double mainRightPanelOpacity READ mainRightPanelOpacity NOTIFY settingsChanged)
+    Q_PROPERTY(double mainWallpaperBlur READ mainWallpaperBlur NOTIFY settingsChanged)
+    Q_PROPERTY(QString mainWallpaperMode READ mainWallpaperMode NOTIFY settingsChanged)
+    Q_PROPERTY(double backdropProtection READ backdropProtection NOTIFY backdropProtectionChanged)
+    Q_PROPERTY(QUrl wallpaperSource READ wallpaperSource NOTIFY wallpaperChanged)
+    Q_PROPERTY(QRect wallpaperScreenGeometry READ wallpaperScreenGeometry NOTIFY wallpaperChanged)
 
 public:
     explicit TodoApp(QObject *parent = nullptr);
@@ -43,12 +54,20 @@ public:
     QString theme() const;
     QString noteTheme() const;
     QString priorityStyle() const;
+    bool todosWrapEnabled() const;
     int opacity() const;
     QString storagePath() const;
     double mainDefaultTodoAlphaLight() const;
     double mainPriorityTodoAlphaLight() const;
     double mainDefaultTodoAlphaDark() const;
     double mainPriorityTodoAlphaDark() const;
+    double mainWindowOpacity() const;
+    double mainRightPanelOpacity() const;
+    double mainWallpaperBlur() const;
+    QString mainWallpaperMode() const;
+    double backdropProtection() const;
+    QUrl wallpaperSource() const;
+    QRect wallpaperScreenGeometry() const;
     QString noteSummaryTemplate() const;
     void setNoteSummaryTemplate(const QString &summaryTemplate);
     QString noteWindowLayer(const QString &noteId) const;
@@ -66,6 +85,7 @@ public:
     Q_INVOKABLE void deleteNote(const QString &noteId);
     Q_INVOKABLE void updateNoteTitle(const QString &noteId, const QString &title);
     Q_INVOKABLE QString summarizeNote(const QString &noteId);
+    Q_INVOKABLE QString syncNoteTodosToSystemCalendar(const QString &noteId);
     Q_INVOKABLE QString addTodoToNote(const QString &noteId, const QString &text);
     Q_INVOKABLE void commitNoteTodoText(const QString &noteId, const QString &todoId, const QString &text);
     Q_INVOKABLE void toggleNoteTodo(const QString &noteId, const QString &todoId);
@@ -85,6 +105,8 @@ public:
     Q_INVOKABLE QString exportData();
     Q_INVOKABLE QString importData();
     Q_INVOKABLE QString openStoragePath();
+    Q_INVOKABLE void setMainWallpaperMode(const QString &mode);
+    Q_INVOKABLE QString chooseMainWindowWallpaper();
     Q_INVOKABLE QString summarizeAllNotes();
     Q_INVOKABLE QString summarizeNotesRange(const QString &scope);
     Q_INVOKABLE QString summaryTemplate(const QString &scope) const;
@@ -95,11 +117,14 @@ public:
     Q_INVOKABLE void saveEvent(const QVariantMap &event);
     Q_INVOKABLE void deleteEvent(const QString &eventId);
     Q_INVOKABLE QVariantMap cursorPosition() const;
+    Q_INVOKABLE void refreshWallpaper();
 
 signals:
     void notesChanged();
     void eventsChanged();
     void settingsChanged();
+    void backdropProtectionChanged();
+    void wallpaperChanged();
 
 private:
     QQuickView *createView(const QUrl &source, const QSize &size, const QSize &minSize, bool transparent, bool resizable);
@@ -128,6 +153,13 @@ private:
     QString buildNotesRangeSummaryPrompt(const QString &scope) const;
     QVariantList buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const;
     void showEffectOverlay(const QString &mode, const QVariantList &particles = QVariantList(), bool restoreListWindowOnClose = false);
+    QUrl readSystemWallpaperSource() const;
+    QUrl readDdeAppearanceWallpaperSource() const;
+    QUrl cachedWallpaperSource(const QUrl &source, const QRect &screenGeometry) const;
+    void updateWallpaperWatchPaths(const QUrl &source);
+    QRect currentListScreenGeometry() const;
+    QString currentListScreenName() const;
+    void applyMainWindowAppearanceDefaults();
     QString dataFilePath(const QString &name) const;
     QString m_dataDir;
     QJsonArray m_notes;
@@ -146,4 +178,8 @@ private:
     // QPointer<QQuickView> m_calendarView;
     QPointer<QQuickView> m_settingsView;
     // QPointer<QQuickView> m_eventEditorView;
+    QFileSystemWatcher *m_wallpaperWatcher = nullptr;
+    double m_backdropProtection = 0.0;
+    QUrl m_wallpaperSource;
+    QRect m_wallpaperScreenGeometry;
 };

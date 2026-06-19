@@ -1,11 +1,13 @@
 #include "TodoApp.h"
 
+#include "CalendarSyncService.h"
 // Calendar/event editor is parked for the current version.
 // #include "EventEditorController.h"
 #include "NoteController.h"
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QCursor>
 #include <QDate>
 #include <QDateTime>
@@ -13,11 +15,16 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QImage>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QMenu>
 #include <QPainter>
 #include <QPixmap>
@@ -27,6 +34,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QStandardPaths>
@@ -38,11 +46,23 @@
 
 #include <cmath>
 #include <memory>
+#include <utility>
 
 namespace {
 constexpr int MaxNotes = 999;
 constexpr int MaxPromptLength = 12000;
 const char ProductIconPath[] = ":/assets/xiaou-todo-app-icon.png";
+const char DefaultMainWallpaperPath[] = "qrc:/assets/default-main-wallpaper.jpg";
+constexpr double DefaultWallpaperWindowOpacity = 0.405;
+constexpr double DefaultWallpaperRightPanelOpacity = 0.70;
+constexpr double DefaultWallpaperBlur = 0.75;
+constexpr double SystemWallpaperWindowOpacity = 0.30;
+constexpr double SystemWallpaperRightPanelOpacity = 0.80;
+constexpr double SystemWallpaperBlur = 0.30;
+constexpr double DarkThemeWindowOpacity = 0.37;
+constexpr double DarkThemeRightPanelOpacity = 0.26;
+constexpr double DarkThemeWallpaperBlur = 0.70;
+constexpr int DarkThemeMainAppearanceVersion = 1;
 
 QString isoNow()
 {
@@ -176,6 +196,65 @@ QString appDataDir()
     return QDir(documentsPath).filePath(QStringLiteral("小U待办"));
 }
 
+QString ddeAppearanceConfigPath()
+{
+    return QDir::home().filePath(QStringLiteral(".config/dde-appearance/config.json"));
+}
+
+QString gsettingsValue(const QString &schema, const QString &key)
+{
+    QProcess process;
+    process.start(QStringLiteral("gsettings"), {QStringLiteral("get"), schema, key});
+    if (!process.waitForFinished(800) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return QString();
+    }
+
+    QString value = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    if ((value.startsWith(QLatin1Char('\'')) && value.endsWith(QLatin1Char('\'')))
+            || (value.startsWith(QLatin1Char('"')) && value.endsWith(QLatin1Char('"')))) {
+        value = value.mid(1, value.size() - 2);
+    }
+    return value;
+}
+
+QUrl wallpaperUrlFromValue(const QString &value)
+{
+    if (value.isEmpty() || value == QStringLiteral("@ms Nothing")) {
+        return QUrl();
+    }
+
+    const QUrl url(value);
+    if (url.isLocalFile() && QFile::exists(url.toLocalFile())) {
+        return url;
+    }
+    if (url.isValid() && !url.scheme().isEmpty()) {
+        return url;
+    }
+    if (QFile::exists(value)) {
+        return QUrl::fromLocalFile(value);
+    }
+    return QUrl();
+}
+
+int currentWorkspaceNumber()
+{
+    QProcess process;
+    process.start(QStringLiteral("xprop"), {QStringLiteral("-root"), QStringLiteral("_NET_CURRENT_DESKTOP")});
+    if (!process.waitForFinished(800) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return 1;
+    }
+
+    const QString output = QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+    const int equalsIndex = output.lastIndexOf(QLatin1Char('='));
+    if (equalsIndex < 0) {
+        return 1;
+    }
+
+    bool ok = false;
+    const int zeroBasedDesktop = output.mid(equalsIndex + 1).trimmed().toInt(&ok);
+    return ok ? qMax(1, zeroBasedDesktop + 1) : 1;
+}
+
 void migrateLegacyDataDir(const QString &targetDir)
 {
     const QString legacyDir = QDir::homePath() + QStringLiteral("/.todo260606");
@@ -226,15 +305,30 @@ TodoApp::TodoApp(QObject *parent)
     : QObject(parent)
     , m_dataDir(appDataDir())
 {
+    m_wallpaperWatcher = new QFileSystemWatcher(this);
+    connect(m_wallpaperWatcher, &QFileSystemWatcher::fileChanged, this, [this]() {
+        refreshWallpaper();
+    });
+    connect(m_wallpaperWatcher, &QFileSystemWatcher::directoryChanged, this, [this]() {
+        refreshWallpaper();
+    });
+
     m_settings.insert(QStringLiteral("theme"), QStringLiteral("dark"));
     m_settings.insert(QStringLiteral("noteTheme"), QStringLiteral("dark"));
     m_settings.insert(QStringLiteral("priorityStyle"), QStringLiteral("colorful"));
+    m_settings.insert(QStringLiteral("todosWrapEnabled"), false);
     m_settings.insert(QStringLiteral("opacity"), 60);
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     m_settings.insert(QStringLiteral("mainDefaultTodoAlphaLight"), 0.445);
     m_settings.insert(QStringLiteral("mainPriorityTodoAlphaLight"), 0.275);
     m_settings.insert(QStringLiteral("mainDefaultTodoAlphaDark"), 0.13);
     m_settings.insert(QStringLiteral("mainPriorityTodoAlphaDark"), 0.21);
+    m_settings.insert(QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity);
+    m_settings.insert(QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity);
+    m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
+    m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("system"));
+    m_settings.insert(QStringLiteral("mainCustomWallpaperPath"), QString());
+    applyMainWindowAppearanceDefaults();
 }
 
 TodoApp::~TodoApp()
@@ -363,12 +457,20 @@ QVariantList TodoApp::eventsList() const
 QString TodoApp::theme() const { return m_settings.value(QStringLiteral("theme")).toString(QStringLiteral("dark")); }
 QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("noteTheme")).toString(QStringLiteral("dark")); }
 QString TodoApp::priorityStyle() const { return m_settings.value(QStringLiteral("priorityStyle")).toString(QStringLiteral("colorful")); }
+bool TodoApp::todosWrapEnabled() const { return m_settings.value(QStringLiteral("todosWrapEnabled")).toBool(false); }
 int TodoApp::opacity() const { return m_settings.value(QStringLiteral("opacity")).toInt(60); }
 QString TodoApp::storagePath() const { return m_dataDir; }
 double TodoApp::mainDefaultTodoAlphaLight() const { return numberSetting(m_settings, QStringLiteral("mainDefaultTodoAlphaLight"), 0.445); }
 double TodoApp::mainPriorityTodoAlphaLight() const { return numberSetting(m_settings, QStringLiteral("mainPriorityTodoAlphaLight"), 0.275); }
 double TodoApp::mainDefaultTodoAlphaDark() const { return numberSetting(m_settings, QStringLiteral("mainDefaultTodoAlphaDark"), 0.13); }
 double TodoApp::mainPriorityTodoAlphaDark() const { return numberSetting(m_settings, QStringLiteral("mainPriorityTodoAlphaDark"), 0.21); }
+double TodoApp::mainWindowOpacity() const { return numberSetting(m_settings, QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity); }
+double TodoApp::mainRightPanelOpacity() const { return numberSetting(m_settings, QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity); }
+double TodoApp::mainWallpaperBlur() const { return numberSetting(m_settings, QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur); }
+QString TodoApp::mainWallpaperMode() const { return m_settings.value(QStringLiteral("mainWallpaperMode")).toString(QStringLiteral("system")); }
+double TodoApp::backdropProtection() const { return m_backdropProtection; }
+QUrl TodoApp::wallpaperSource() const { return m_wallpaperSource; }
+QRect TodoApp::wallpaperScreenGeometry() const { return m_wallpaperScreenGeometry; }
 
 void TodoApp::syncDtkPalette()
 {
@@ -384,6 +486,28 @@ void TodoApp::syncDtkPalette()
         helper->setPaletteType(Dtk::Gui::DGuiApplicationHelper::DarkType);
     }
     m_syncingDtkPalette = false;
+}
+
+void TodoApp::applyMainWindowAppearanceDefaults()
+{
+    if (theme() == QStringLiteral("dark")) {
+        m_settings.insert(QStringLiteral("mainWindowOpacity"), DarkThemeWindowOpacity);
+        m_settings.insert(QStringLiteral("mainRightPanelOpacity"), DarkThemeRightPanelOpacity);
+        m_settings.insert(QStringLiteral("mainWallpaperBlur"), DarkThemeWallpaperBlur);
+        m_settings.insert(QStringLiteral("darkThemeMainAppearanceVersion"), DarkThemeMainAppearanceVersion);
+        return;
+    }
+
+    if (mainWallpaperMode() == QStringLiteral("default")) {
+        m_settings.insert(QStringLiteral("mainWindowOpacity"), DefaultWallpaperWindowOpacity);
+        m_settings.insert(QStringLiteral("mainRightPanelOpacity"), DefaultWallpaperRightPanelOpacity);
+        m_settings.insert(QStringLiteral("mainWallpaperBlur"), DefaultWallpaperBlur);
+        return;
+    }
+
+    m_settings.insert(QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity);
+    m_settings.insert(QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity);
+    m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
 }
 
 void TodoApp::syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType)
@@ -411,6 +535,7 @@ void TodoApp::syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorTy
 
     m_settings.insert(QStringLiteral("theme"), nextTheme);
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    applyMainWindowAppearanceDefaults();
     saveSettings();
     emit settingsChanged();
 }
@@ -547,6 +672,41 @@ QString TodoApp::summarizeNote(const QString &noteId)
     return sendPromptToUosAi(buildCurrentNoteSummaryPrompt(note));
 }
 
+QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
+{
+    if (noteId.isEmpty()) {
+        return QStringLiteral("未找到待办窗口");
+    }
+
+    const QJsonObject note = noteById(noteId);
+    if (note.isEmpty()) {
+        return QStringLiteral("未找到待办窗口");
+    }
+
+    CalendarSyncService service;
+    const CalendarSyncService::SyncResult result = service.syncNoteTodos(note);
+    for (const QString &error : result.errors) {
+        qWarning() << "Calendar sync:" << error;
+    }
+
+    if (result.changedTodos) {
+        for (int i = 0; i < m_notes.size(); ++i) {
+            QJsonObject current = m_notes.at(i).toObject();
+            if (current.value(QStringLiteral("id")).toVariant().toString() != noteId) {
+                continue;
+            }
+            current.insert(QStringLiteral("todos"), result.todos);
+            m_notes.replace(i, current);
+            saveNotes();
+            emit notesChanged();
+            refreshNoteControllers(noteId);
+            break;
+        }
+    }
+
+    return result.message.isEmpty() ? QStringLiteral("系统日历服务不可用") : result.message;
+}
+
 QString TodoApp::addTodoToNote(const QString &noteId, const QString &text)
 {
     if (noteId.isEmpty()) {
@@ -569,6 +729,18 @@ QString TodoApp::addTodoToNote(const QString &noteId, const QString &text)
         {QStringLiteral("priority"), QStringLiteral("gray")}
     });
     updateNoteTodos(noteId, todos);
+    int totalTodos = 0;
+    for (const QJsonValue &noteValue : std::as_const(m_notes)) {
+        const QJsonArray noteTodos = noteValue.toObject().value(QStringLiteral("todos")).toArray();
+        for (const QJsonValue &todoValue : noteTodos) {
+            if (!todoValue.toObject().value(QStringLiteral("text")).toString().trimmed().isEmpty()) {
+                ++totalTodos;
+            }
+        }
+    }
+    if (totalTodos > 0 && totalTodos % 50 == 0) {
+        QTimer::singleShot(220, this, &TodoApp::triggerMainWindowPowderEffect);
+    }
     return id;
 }
 
@@ -844,12 +1016,14 @@ void TodoApp::deleteNote(const QString &noteId)
 void TodoApp::showListWindow()
 {
     if (m_listWindow) {
+        refreshWallpaper();
         m_listWindow->show();
         m_listWindow->raise();
         m_listWindow->requestActivate();
         return;
     }
 
+    refreshWallpaper();
     m_listEngine = new QQmlEngine(this);
     m_listEngine->rootContext()->setContextProperty(QStringLiteral("app"), this);
     QQmlComponent component(m_listEngine, QUrl(QStringLiteral("qrc:/ListWindow.qml")));
@@ -869,7 +1043,18 @@ void TodoApp::showListWindow()
         return;
     }
     window->setIcon(productIcon());
+    if (auto *quickWindow = qobject_cast<QQuickWindow *>(window)) {
+        quickWindow->setColor(Qt::transparent);
+    }
     m_listWindow = window;
+    connect(window, &QWindow::visibleChanged, this, [this](bool visible) {
+        if (visible) {
+            refreshWallpaper();
+        }
+    });
+    connect(window, &QWindow::screenChanged, this, [this]() {
+        refreshWallpaper();
+    });
     connect(window, &QObject::destroyed, this, [this]() {
         m_listWindow = nullptr;
         if (m_listEngine) {
@@ -880,6 +1065,244 @@ void TodoApp::showListWindow()
     window->show();
     window->raise();
     window->requestActivate();
+    refreshWallpaper();
+}
+
+void TodoApp::refreshWallpaper()
+{
+    const QUrl rawSource = readSystemWallpaperSource();
+    const QRect nextGeometry = currentListScreenGeometry();
+    updateWallpaperWatchPaths(rawSource);
+
+    const QUrl nextSource = cachedWallpaperSource(rawSource, nextGeometry);
+    if (nextSource == m_wallpaperSource && nextGeometry == m_wallpaperScreenGeometry) {
+        return;
+    }
+
+    m_wallpaperSource = nextSource;
+    m_wallpaperScreenGeometry = nextGeometry;
+    emit wallpaperChanged();
+}
+
+QUrl TodoApp::readSystemWallpaperSource() const
+{
+    if (mainWallpaperMode() == QStringLiteral("default")) {
+        return QUrl(QString::fromLatin1(DefaultMainWallpaperPath));
+    }
+
+    if (mainWallpaperMode() == QStringLiteral("custom")) {
+        const QString customPath = m_settings.value(QStringLiteral("mainCustomWallpaperPath")).toString();
+        if (!customPath.isEmpty() && QFile::exists(customPath)) {
+            return QUrl::fromLocalFile(customPath);
+        }
+    }
+
+    const QUrl ddeAppearanceUrl = readDdeAppearanceWallpaperSource();
+    if (ddeAppearanceUrl.isValid() && !ddeAppearanceUrl.isEmpty()) {
+        return ddeAppearanceUrl;
+    }
+
+    const QUrl deepinUrl = wallpaperUrlFromValue(gsettingsValue(QStringLiteral("com.deepin.wrap.gnome.desktop.background"),
+                                                               QStringLiteral("picture-uri")));
+    if (deepinUrl.isValid() && !deepinUrl.isEmpty()) {
+        return deepinUrl;
+    }
+
+    return wallpaperUrlFromValue(gsettingsValue(QStringLiteral("org.gnome.desktop.background"),
+                                                QStringLiteral("picture-uri")));
+}
+
+QUrl TodoApp::readDdeAppearanceWallpaperSource() const
+{
+    QFile file(ddeAppearanceConfigPath());
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QUrl();
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isArray()) {
+        return QUrl();
+    }
+
+    const QString screenName = currentListScreenName();
+    const int workspace = currentWorkspaceNumber();
+    const QString exactKey = QStringLiteral("%1+%2").arg(workspace).arg(screenName);
+    const QString workspacePrefix = QStringLiteral("%1+").arg(workspace);
+    const QString screenSuffix = QStringLiteral("+%1").arg(screenName);
+
+    QUrl firstWorkspaceUrl;
+    QUrl firstScreenUrl;
+    QUrl firstUrl;
+
+    const QJsonArray roots = document.array();
+    for (const QJsonValue &rootValue : roots) {
+        const QJsonArray wallpaperInfo = rootValue.toObject().value(QStringLiteral("wallpaperInfo")).toArray();
+        for (const QJsonValue &infoValue : wallpaperInfo) {
+            const QJsonObject info = infoValue.toObject();
+            const QString wpIndex = info.value(QStringLiteral("wpIndex")).toString();
+            const QUrl url = wallpaperUrlFromValue(info.value(QStringLiteral("uri")).toString());
+            if (!url.isValid() || url.isEmpty()) {
+                continue;
+            }
+
+            if (firstUrl.isEmpty()) {
+                firstUrl = url;
+            }
+            if (firstWorkspaceUrl.isEmpty() && wpIndex.startsWith(workspacePrefix)) {
+                firstWorkspaceUrl = url;
+            }
+            if (!screenName.isEmpty() && firstScreenUrl.isEmpty() && wpIndex.endsWith(screenSuffix)) {
+                firstScreenUrl = url;
+            }
+            if (!screenName.isEmpty() && wpIndex == exactKey) {
+                return url;
+            }
+        }
+    }
+
+    if (!firstWorkspaceUrl.isEmpty()) {
+        return firstWorkspaceUrl;
+    }
+    if (!firstScreenUrl.isEmpty()) {
+        return firstScreenUrl;
+    }
+    return firstUrl;
+}
+
+QUrl TodoApp::cachedWallpaperSource(const QUrl &source, const QRect &screenGeometry) const
+{
+    if (!source.isLocalFile()) {
+        return source;
+    }
+
+    const QString sourcePath = source.toLocalFile();
+    const QFileInfo sourceInfo(sourcePath);
+    if (!sourceInfo.exists() || !sourceInfo.isFile()) {
+        return source;
+    }
+
+    QSize targetSize = screenGeometry.size();
+    if (!targetSize.isValid() || targetSize.width() <= 0 || targetSize.height() <= 0) {
+        if (QScreen *screen = QGuiApplication::primaryScreen()) {
+            targetSize = screen->geometry().size();
+        }
+    }
+    if (!targetSize.isValid() || targetSize.width() <= 0 || targetSize.height() <= 0) {
+        return source;
+    }
+
+    QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (cacheRoot.isEmpty()) {
+        cacheRoot = QDir(m_dataDir).filePath(QStringLiteral("cache"));
+    }
+    const QString cacheDir = QDir(cacheRoot).filePath(QStringLiteral("wallpapers"));
+    QDir().mkpath(cacheDir);
+
+    QByteArray key;
+    key += sourcePath.toUtf8();
+    key += '|';
+    key += QByteArray::number(sourceInfo.lastModified().toMSecsSinceEpoch());
+    key += '|';
+    key += QByteArray::number(sourceInfo.size());
+    key += '|';
+    key += QByteArray::number(targetSize.width());
+    key += 'x';
+    key += QByteArray::number(targetSize.height());
+    const QString cachePath = QDir(cacheDir).filePath(QString::fromLatin1(QCryptographicHash::hash(key, QCryptographicHash::Sha1).toHex()) + QStringLiteral(".jpg"));
+    if (QFile::exists(cachePath)) {
+        return QUrl::fromLocalFile(cachePath);
+    }
+
+    QImageReader reader(sourcePath);
+    reader.setAutoTransform(true);
+    const QSize originalSize = reader.size();
+    if (originalSize.isValid()) {
+        QSize decodeSize = originalSize;
+        decodeSize.scale(targetSize, Qt::KeepAspectRatioByExpanding);
+        reader.setScaledSize(decodeSize);
+    }
+
+    QImage image = reader.read();
+    if (image.isNull()) {
+        qWarning() << "Failed to read wallpaper for cache:" << sourcePath << reader.errorString();
+        return source;
+    }
+
+    if (image.size() != targetSize) {
+        QSize scaledSize = image.size();
+        scaledSize.scale(targetSize, Qt::KeepAspectRatioByExpanding);
+        image = image.scaled(scaledSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    }
+
+    const QRect cropRect((image.width() - targetSize.width()) / 2,
+                         (image.height() - targetSize.height()) / 2,
+                         targetSize.width(),
+                         targetSize.height());
+    const QImage cropped = image.copy(cropRect).convertToFormat(QImage::Format_RGB888);
+    if (!cropped.save(cachePath, "JPG", 88)) {
+        qWarning() << "Failed to write wallpaper cache:" << cachePath;
+        return source;
+    }
+
+    return QUrl::fromLocalFile(cachePath);
+}
+
+void TodoApp::updateWallpaperWatchPaths(const QUrl &source)
+{
+    if (!m_wallpaperWatcher) {
+        return;
+    }
+
+    const QStringList watchedFiles = m_wallpaperWatcher->files();
+    if (!watchedFiles.isEmpty()) {
+        m_wallpaperWatcher->removePaths(watchedFiles);
+    }
+    const QStringList watchedDirectories = m_wallpaperWatcher->directories();
+    if (!watchedDirectories.isEmpty()) {
+        m_wallpaperWatcher->removePaths(watchedDirectories);
+    }
+
+    const QString configPath = ddeAppearanceConfigPath();
+    const QFileInfo configInfo(configPath);
+    if (configInfo.exists()) {
+        m_wallpaperWatcher->addPath(configPath);
+    }
+    const QString configDir = configInfo.absolutePath();
+    if (QDir(configDir).exists()) {
+        m_wallpaperWatcher->addPath(configDir);
+    }
+
+    if (source.isLocalFile()) {
+        const QString sourcePath = source.toLocalFile();
+        if (QFile::exists(sourcePath)) {
+            m_wallpaperWatcher->addPath(sourcePath);
+        }
+    }
+}
+
+QRect TodoApp::currentListScreenGeometry() const
+{
+    QScreen *screen = nullptr;
+    if (m_listWindow) {
+        screen = m_listWindow->screen();
+    }
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    return screen ? screen->geometry() : QRect();
+}
+
+QString TodoApp::currentListScreenName() const
+{
+    QScreen *screen = nullptr;
+    if (m_listWindow) {
+        screen = m_listWindow->screen();
+    }
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    return screen ? screen->name() : QString();
 }
 
 void TodoApp::showEffectsTestWindow()
@@ -1213,9 +1636,16 @@ void TodoApp::updateSetting(const QString &key, const QVariant &value)
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     if (key == QStringLiteral("theme")) {
         syncDtkPalette();
+        applyMainWindowAppearanceDefaults();
     }
     saveSettings();
     emit settingsChanged();
+    if (key == QStringLiteral("mainWallpaperMode")
+            || key == QStringLiteral("mainCustomWallpaperPath")
+            || key == QStringLiteral("mainWindowOpacity")
+            || key == QStringLiteral("mainRightPanelOpacity")) {
+        refreshWallpaper();
+    }
 }
 
 QString TodoApp::exportData()
@@ -1276,6 +1706,58 @@ QString TodoApp::openStoragePath()
         return QStringLiteral("已打开存储路径");
     }
     return QStringLiteral("无法打开存储路径");
+}
+
+void TodoApp::setMainWallpaperMode(const QString &mode)
+{
+    const QString nextMode = mode == QStringLiteral("default") ? QStringLiteral("default") : QStringLiteral("system");
+    m_settings.insert(QStringLiteral("mainWallpaperMode"), nextMode);
+    applyMainWindowAppearanceDefaults();
+    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    saveSettings();
+    emit settingsChanged();
+    refreshWallpaper();
+}
+
+QString TodoApp::chooseMainWindowWallpaper()
+{
+    const QString fileName = QFileDialog::getOpenFileName(nullptr,
+        QStringLiteral("选择主窗口背景壁纸"),
+        QStandardPaths::writableLocation(QStandardPaths::PicturesLocation).isEmpty()
+            ? QDir::homePath()
+            : QStandardPaths::writableLocation(QStandardPaths::PicturesLocation),
+        QStringLiteral("图片文件 (*.png *.jpg *.jpeg *.webp *.bmp)"));
+    if (fileName.isEmpty()) {
+        return QStringLiteral("已取消选择壁纸");
+    }
+
+    const QFileInfo sourceInfo(fileName);
+    if (!sourceInfo.exists() || !sourceInfo.isFile()) {
+        return QStringLiteral("壁纸文件不存在");
+    }
+
+    const QString wallpaperDir = QDir(m_dataDir).filePath(QStringLiteral("wallpapers"));
+    QDir().mkpath(wallpaperDir);
+    QString suffix = sourceInfo.suffix().toLower();
+    if (suffix.isEmpty()) {
+        suffix = QStringLiteral("jpg");
+    }
+    const QString targetPath = QDir(wallpaperDir).filePath(QStringLiteral("main-window-wallpaper.") + suffix);
+    if (QFile::exists(targetPath) && !QFile::remove(targetPath)) {
+        return QStringLiteral("无法替换已有壁纸");
+    }
+    if (!QFile::copy(fileName, targetPath)) {
+        return QStringLiteral("壁纸复制失败");
+    }
+
+    m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("custom"));
+    m_settings.insert(QStringLiteral("mainCustomWallpaperPath"), targetPath);
+    applyMainWindowAppearanceDefaults();
+    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    saveSettings();
+    emit settingsChanged();
+    refreshWallpaper();
+    return QStringLiteral("主窗口背景已更新");
 }
 
 QString TodoApp::summarizeAllNotes()
@@ -1443,6 +1925,37 @@ void TodoApp::loadData()
         m_settings.insert(it.key(), it.value());
     }
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+
+    auto settingEquals = [this](const QString &key, double expected) {
+        return std::abs(numberSetting(m_settings, key, -1.0) - expected) < 0.0005;
+    };
+    const QString wallpaperMode = mainWallpaperMode();
+    if (wallpaperMode == QStringLiteral("default")) {
+        const bool hasOldDefaultWallpaperValues =
+            settingEquals(QStringLiteral("mainWindowOpacity"), 0.0)
+            && settingEquals(QStringLiteral("mainRightPanelOpacity"), 0.0)
+            && settingEquals(QStringLiteral("mainWallpaperBlur"), 0.75);
+        if (hasOldDefaultWallpaperValues) {
+            m_settings.insert(QStringLiteral("mainWindowOpacity"), DefaultWallpaperWindowOpacity);
+            m_settings.insert(QStringLiteral("mainRightPanelOpacity"), DefaultWallpaperRightPanelOpacity);
+            m_settings.insert(QStringLiteral("mainWallpaperBlur"), DefaultWallpaperBlur);
+        }
+    } else {
+        const bool hasOldSystemWallpaperValues =
+            settingEquals(QStringLiteral("mainWindowOpacity"), 0.30)
+            && settingEquals(QStringLiteral("mainRightPanelOpacity"), 0.48)
+            && settingEquals(QStringLiteral("mainWallpaperBlur"), 0.0);
+        if (hasOldSystemWallpaperValues) {
+            m_settings.insert(QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity);
+            m_settings.insert(QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity);
+            m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
+        }
+    }
+
+    const int darkAppearanceVersion = m_settings.value(QStringLiteral("darkThemeMainAppearanceVersion")).toInt(0);
+    if (theme() == QStringLiteral("dark") && darkAppearanceVersion < DarkThemeMainAppearanceVersion) {
+        applyMainWindowAppearanceDefaults();
+    }
 }
 
 void TodoApp::saveNotes() const

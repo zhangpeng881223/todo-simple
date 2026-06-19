@@ -138,6 +138,36 @@ void NoteController::commitTodoText(int index, const QString &text)
     saveTodos(todos);
 }
 
+QString NoteController::commitTodoTextAndAddNext(int index, const QString &text)
+{
+    QJsonArray todos = todosArray();
+    const int actualIndex = actualIndexFromDisplayIndex(todos, index);
+    if (actualIndex < 0) {
+        return {};
+    }
+
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty()) {
+        todos.removeAt(actualIndex);
+        saveTodos(todos);
+        return {};
+    }
+
+    QJsonObject item = todos.at(actualIndex).toObject();
+    item.insert(QStringLiteral("text"), trimmed);
+    todos.replace(actualIndex, item);
+
+    const QString id = newTodoId();
+    QJsonObject nextItem;
+    nextItem.insert(QStringLiteral("id"), id);
+    nextItem.insert(QStringLiteral("text"), QString());
+    nextItem.insert(QStringLiteral("completed"), false);
+    nextItem.insert(QStringLiteral("priority"), QStringLiteral("gray"));
+    todos.insert(qMin(actualIndex + 1, todos.size()), nextItem);
+    saveTodos(todos);
+    return id;
+}
+
 void NoteController::toggleTodo(int index)
 {
     QJsonArray todos = todosArray();

@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>components/IconButton.qml</file>
         <file>components/LiquidGlassSurface.qml</file>
+        <file>components/WallpaperBackdrop.qml</file>
         <file>qmldir</file>
         <file>components/PriorityMenu.qml</file>
         <file>components/Toast.qml</file>
@@ -36,6 +37,26 @@
         <file>assets/data-export-light.svg</file>
         <file>assets/data-import-dark.svg</file>
         <file>assets/data-import-light.svg</file>
+        <file>assets/settings-main-window-dark.svg</file>
+        <file>assets/settings-main-window-light.svg</file>
+        <file>assets/settings-main-window-active.svg</file>
+        <file>assets/settings-desktop-todo-dark.svg</file>
+        <file>assets/settings-desktop-todo-light.svg</file>
+        <file>assets/settings-desktop-todo-active.svg</file>
+        <file>assets/settings-ai-summary-dark.svg</file>
+        <file>assets/settings-ai-summary-light.svg</file>
+        <file>assets/settings-ai-summary-active.svg</file>
+        <file>assets/settings-data-storage-dark.svg</file>
+        <file>assets/settings-data-storage-light.svg</file>
+        <file>assets/settings-data-storage-active.svg</file>
+        <file>assets/settings-easter-egg-dark.svg</file>
+        <file>assets/settings-easter-egg-light.svg</file>
+        <file>assets/settings-easter-egg-active.svg</file>
+        <file>assets/default-main-wallpaper.jpg</file>
+        <file>assets/default-main-wallpaper-dark.jpg</file>
+        <file>assets/default-main-wallpaper-light.jpg</file>
+        <file>assets/default-main-wallpaper-source-dark.jpg</file>
+        <file>assets/default-main-wallpaper-source-light.jpg</file>
         <file>assets/toolbar-wrap-dark.svg</file>
         <file>assets/toolbar-wrap-light.svg</file>
         <file>assets/toolbar-wrap-accent.svg</file>
@@ -46,6 +67,9 @@
         <file>assets/toolbar-desktop-accent.svg</file>
         <file>assets/toolbar-desktop-active-dark.svg</file>
         <file>assets/toolbar-desktop-active-light.svg</file>
+        <file>assets/toolbar-calendar-dark.svg</file>
+        <file>assets/toolbar-calendar-light.svg</file>
+        <file>assets/toolbar-calendar-accent.svg</file>
         <file>assets/toolbar-trash-dark.svg</file>
         <file>assets/toolbar-trash-light.svg</file>
         <file>assets/toolbar-trash-accent.svg</file>
