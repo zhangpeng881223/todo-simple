@@ -31,6 +31,7 @@ int main(int argc, char *argv[])
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     QApplication::setApplicationName(QStringLiteral("小U待办"));
+    QApplication::setApplicationVersion(QStringLiteral("1.0.0"));
     QApplication::setOrganizationName(QStringLiteral("Todo260606"));
     QGuiApplication::setDesktopFileName(QStringLiteral("todo260606"));
 

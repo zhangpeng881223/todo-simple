@@ -4,6 +4,7 @@
 #include <QRect>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QQuickView>
 #include <QQmlEngine>
@@ -19,6 +20,7 @@ class QFileSystemWatcher;
 class QMenu;
 class QTimer;
 class QWindow;
+class TelemetryService;
 
 class TodoApp : public QObject
 {
@@ -160,6 +162,12 @@ private:
     QRect currentListScreenGeometry() const;
     QString currentListScreenName() const;
     void applyMainWindowAppearanceDefaults();
+    void startTelemetry();
+    void trackTelemetry(const QString &eventName,
+                        const QString &eventType,
+                        const QString &module,
+                        const QJsonObject &properties = QJsonObject(),
+                        double durationSeconds = 0.0);
     QString dataFilePath(const QString &name) const;
     QString m_dataDir;
     QJsonArray m_notes;
@@ -179,6 +187,9 @@ private:
     QPointer<QQuickView> m_settingsView;
     // QPointer<QQuickView> m_eventEditorView;
     QFileSystemWatcher *m_wallpaperWatcher = nullptr;
+    TelemetryService *m_telemetry = nullptr;
+    QTimer *m_telemetryHeartbeatTimer = nullptr;
+    QElapsedTimer m_sessionTimer;
     double m_backdropProtection = 0.0;
     QUrl m_wallpaperSource;
     QRect m_wallpaperScreenGeometry;

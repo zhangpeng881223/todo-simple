@@ -7,8 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Gui Quick QuickControls2 Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Gui Quick QuickControls2 Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
 find_package(Dtk6Gui REQUIRED)
 find_package(Dtk6Widget REQUIRED)
 
@@ -20,6 +20,8 @@ add_executable(todo260606
     src/CalendarSyncService.h
     src/NoteController.cpp
     src/NoteController.h
+    src/TelemetryService.cpp
+    src/TelemetryService.h
     src/TodoApp.cpp
     src/TodoApp.h
     src/main.cpp
@@ -31,6 +33,7 @@ target_link_libraries(todo260606
         Qt${QT_VERSION_MAJOR}::Core
         Qt${QT_VERSION_MAJOR}::DBus
         Qt${QT_VERSION_MAJOR}::Gui
+        Qt${QT_VERSION_MAJOR}::Network
         Qt${QT_VERSION_MAJOR}::Quick
         Qt${QT_VERSION_MAJOR}::QuickControls2
         Qt${QT_VERSION_MAJOR}::Widgets

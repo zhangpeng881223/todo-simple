@@ -4,6 +4,7 @@
 // Calendar/event editor is parked for the current version.
 // #include "EventEditorController.h"
 #include "NoteController.h"
+#include "TelemetryService.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -328,11 +329,22 @@ TodoApp::TodoApp(QObject *parent)
     m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
     m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("system"));
     m_settings.insert(QStringLiteral("mainCustomWallpaperPath"), QString());
+    m_settings.insert(QStringLiteral("telemetryEnabled"), true);
+    m_settings.insert(QStringLiteral("telemetryEndpoint"), QStringLiteral("http://8.145.43.232/api/telemetry/batch"));
     applyMainWindowAppearanceDefaults();
+    m_telemetry = new TelemetryService(m_dataDir, this);
 }
 
 TodoApp::~TodoApp()
 {
+    trackTelemetry(QStringLiteral("app_exit"),
+                   QStringLiteral("应用退出"),
+                   QStringLiteral("app"),
+                   QJsonObject(),
+                   m_sessionTimer.isValid() ? m_sessionTimer.elapsed() / 1000.0 : 0.0);
+    if (m_telemetry) {
+        m_telemetry->flush();
+    }
     if (m_tray) {
         m_tray->hide();
         m_tray->setContextMenu(nullptr);
@@ -349,6 +361,7 @@ void TodoApp::initialize()
     migrateLegacyDataDir(m_dataDir);
     QDir().mkpath(m_dataDir);
     loadData();
+    startTelemetry();
     connect(Dtk::Gui::DGuiApplicationHelper::instance(),
             &Dtk::Gui::DGuiApplicationHelper::paletteTypeChanged,
             this,
@@ -393,6 +406,54 @@ void TodoApp::initialize()
             showSettingsWindow();
         }
     });
+}
+
+void TodoApp::startTelemetry()
+{
+    if (!m_telemetry) {
+        return;
+    }
+    m_telemetry->setEnabled(m_settings.value(QStringLiteral("telemetryEnabled")).toBool(true));
+    m_telemetry->setEndpoint(QUrl(m_settings.value(QStringLiteral("telemetryEndpoint")).toString()));
+    m_sessionTimer.start();
+
+    QJsonObject properties;
+    properties.insert(QStringLiteral("noteCount"), m_notes.size());
+    properties.insert(QStringLiteral("theme"), theme());
+    properties.insert(QStringLiteral("wallpaperMode"), mainWallpaperMode());
+    trackTelemetry(QStringLiteral("app_start"), QStringLiteral("应用启动"), QStringLiteral("app"), properties);
+    m_telemetry->flush();
+
+    if (!m_telemetryHeartbeatTimer) {
+        m_telemetryHeartbeatTimer = new QTimer(this);
+        m_telemetryHeartbeatTimer->setInterval(60000);
+        connect(m_telemetryHeartbeatTimer, &QTimer::timeout, this, [this]() {
+            QJsonObject heartbeat;
+            heartbeat.insert(QStringLiteral("visibleNoteWindows"), m_noteViews.size());
+            heartbeat.insert(QStringLiteral("mainWindowVisible"), static_cast<bool>(m_listWindow && m_listWindow->isVisible()));
+            trackTelemetry(QStringLiteral("session_heartbeat"),
+                           QStringLiteral("会话心跳"),
+                           QStringLiteral("app"),
+                           heartbeat,
+                           m_sessionTimer.isValid() ? m_sessionTimer.elapsed() / 1000.0 : 0.0);
+            if (m_telemetry) {
+                m_telemetry->flush();
+            }
+        });
+    }
+    m_telemetryHeartbeatTimer->start();
+}
+
+void TodoApp::trackTelemetry(const QString &eventName,
+                             const QString &eventType,
+                             const QString &module,
+                             const QJsonObject &properties,
+                             double durationSeconds)
+{
+    if (!m_telemetry) {
+        return;
+    }
+    m_telemetry->track(eventName, eventType, module, properties, durationSeconds);
 }
 
 QVariantList TodoApp::notesList() const
@@ -669,6 +730,10 @@ QString TodoApp::summarizeNote(const QString &noteId)
     if (note.isEmpty()) {
         return QStringLiteral("未找到待办窗口");
     }
+    trackTelemetry(QStringLiteral("ai_summary_note"),
+                   QStringLiteral("AI总结本窗口"),
+                   QStringLiteral("summary"),
+                   QJsonObject{{QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size()}});
     return sendPromptToUosAi(buildCurrentNoteSummaryPrompt(note));
 }
 
@@ -703,6 +768,15 @@ QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
             break;
         }
     }
+
+    QJsonObject properties;
+    properties.insert(QStringLiteral("changedTodos"), result.changedTodos);
+    properties.insert(QStringLiteral("errorCount"), result.errors.size());
+    properties.insert(QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size());
+    trackTelemetry(QStringLiteral("calendar_sync"),
+                   QStringLiteral("同步到日历"),
+                   QStringLiteral("calendar"),
+                   properties);
 
     return result.message.isEmpty() ? QStringLiteral("系统日历服务不可用") : result.message;
 }
@@ -741,6 +815,11 @@ QString TodoApp::addTodoToNote(const QString &noteId, const QString &text)
     if (totalTodos > 0 && totalTodos % 50 == 0) {
         QTimer::singleShot(220, this, &TodoApp::triggerMainWindowPowderEffect);
     }
+    trackTelemetry(QStringLiteral("todo_created"),
+                   QStringLiteral("新建待办项"),
+                   QStringLiteral("todo"),
+                   QJsonObject{{QStringLiteral("totalTodos"), totalTodos},
+                               {QStringLiteral("noteTodoCount"), todos.size()}});
     return id;
 }
 
@@ -759,9 +838,15 @@ void TodoApp::commitNoteTodoText(const QString &noteId, const QString &todoId, c
         const QString trimmed = text.trimmed();
         if (trimmed.isEmpty()) {
             todos.removeAt(i);
+            trackTelemetry(QStringLiteral("todo_empty_removed"),
+                           QStringLiteral("空待办自动移除"),
+                           QStringLiteral("todo"));
         } else {
             todo.insert(QStringLiteral("text"), trimmed);
             todos.replace(i, todo);
+            trackTelemetry(QStringLiteral("todo_text_committed"),
+                           QStringLiteral("待办内容保存"),
+                           QStringLiteral("todo"));
         }
         updateNoteTodos(noteId, todos);
         return;
@@ -780,9 +865,14 @@ void TodoApp::toggleNoteTodo(const QString &noteId, const QString &todoId)
         if (todo.value(QStringLiteral("id")).toVariant().toString() != todoId) {
             continue;
         }
-        todo.insert(QStringLiteral("completed"), !todo.value(QStringLiteral("completed")).toBool(false));
+        const bool nextCompleted = !todo.value(QStringLiteral("completed")).toBool(false);
+        todo.insert(QStringLiteral("completed"), nextCompleted);
         todos.replace(i, todo);
         updateNoteTodos(noteId, todos);
+        trackTelemetry(nextCompleted ? QStringLiteral("todo_completed") : QStringLiteral("todo_uncompleted"),
+                       nextCompleted ? QStringLiteral("完成待办项") : QStringLiteral("取消完成待办项"),
+                       QStringLiteral("todo"),
+                       QJsonObject{{QStringLiteral("priority"), todo.value(QStringLiteral("priority")).toString(QStringLiteral("gray"))}});
         return;
     }
 }
@@ -798,6 +888,10 @@ void TodoApp::deleteNoteTodo(const QString &noteId, const QString &todoId)
         if (todos.at(i).toObject().value(QStringLiteral("id")).toVariant().toString() == todoId) {
             todos.removeAt(i);
             updateNoteTodos(noteId, todos);
+            trackTelemetry(QStringLiteral("todo_deleted"),
+                           QStringLiteral("删除待办项"),
+                           QStringLiteral("todo"),
+                           QJsonObject{{QStringLiteral("noteTodoCount"), todos.size()}});
             return;
         }
     }
@@ -818,6 +912,10 @@ void TodoApp::setNoteTodoPriority(const QString &noteId, const QString &todoId, 
         todo.insert(QStringLiteral("priority"), priority);
         todos.replace(i, todo);
         updateNoteTodos(noteId, todos);
+        trackTelemetry(QStringLiteral("todo_priority_changed"),
+                       QStringLiteral("调整待办优先级"),
+                       QStringLiteral("todo"),
+                       QJsonObject{{QStringLiteral("priority"), priority}});
         return;
     }
 }
@@ -867,6 +965,11 @@ void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int
         next.append(object);
     }
     updateNoteTodos(noteId, next);
+    trackTelemetry(QStringLiteral("todo_reordered"),
+                   QStringLiteral("待办排序"),
+                   QStringLiteral("todo"),
+                   QJsonObject{{QStringLiteral("fromIndex"), from},
+                               {QStringLiteral("toIndex"), to}});
 }
 
 QString TodoApp::createNewNote()
@@ -891,6 +994,10 @@ QString TodoApp::createNewNote()
     saveNotes();
     emit notesChanged();
     openNote(id);
+    trackTelemetry(QStringLiteral("note_created"),
+                   QStringLiteral("新建待办页"),
+                   QStringLiteral("note"),
+                   QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return id;
 }
 
@@ -902,6 +1009,9 @@ void TodoApp::openNote(const QString &noteId)
 void TodoApp::showNoteOnDesktop(const QString &noteId)
 {
     openNoteWithLayer(noteId, QStringLiteral("normal"));
+    trackTelemetry(QStringLiteral("note_show_on_desktop"),
+                   QStringLiteral("在桌面显示待办页"),
+                   QStringLiteral("note"));
 }
 
 void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
@@ -1011,6 +1121,10 @@ void TodoApp::deleteNote(const QString &noteId)
         view->close();
         view->deleteLater();
     }
+    trackTelemetry(QStringLiteral("note_deleted"),
+                   QStringLiteral("删除待办页"),
+                   QStringLiteral("note"),
+                   QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
 }
 
 void TodoApp::showListWindow()
@@ -1020,6 +1134,9 @@ void TodoApp::showListWindow()
         m_listWindow->show();
         m_listWindow->raise();
         m_listWindow->requestActivate();
+        trackTelemetry(QStringLiteral("main_window_opened"),
+                       QStringLiteral("打开主窗口"),
+                       QStringLiteral("main_window"));
         return;
     }
 
@@ -1066,6 +1183,9 @@ void TodoApp::showListWindow()
     window->raise();
     window->requestActivate();
     refreshWallpaper();
+    trackTelemetry(QStringLiteral("main_window_opened"),
+                   QStringLiteral("打开主窗口"),
+                   QStringLiteral("main_window"));
 }
 
 void TodoApp::refreshWallpaper()
@@ -1403,6 +1523,9 @@ void TodoApp::showSettingsWindow()
         m_settingsView->show();
         m_settingsView->raise();
         m_settingsView->requestActivate();
+        trackTelemetry(QStringLiteral("settings_opened"),
+                       QStringLiteral("打开设置"),
+                       QStringLiteral("settings"));
         return;
     }
     m_settingsView = createView(QUrl(QStringLiteral("qrc:/SettingsWindow.qml")), QSize(760, 560), QSize(680, 500), true, false);
@@ -1412,6 +1535,9 @@ void TodoApp::showSettingsWindow()
     m_settingsView->show();
     m_settingsView->raise();
     m_settingsView->requestActivate();
+    trackTelemetry(QStringLiteral("settings_opened"),
+                   QStringLiteral("打开设置"),
+                   QStringLiteral("settings"));
 }
 
 QVariantList TodoApp::buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const
@@ -1541,6 +1667,7 @@ void TodoApp::showAboutDialog()
     dialog->setProductName(QStringLiteral("小U待办"));
     dialog->setVersion(QStringLiteral("1.0.0"));
     dialog->setDescription(QStringLiteral("一个面向 deepin/UOS 桌面的轻量待办工具。"));
+    dialog->setAcknowledgementVisible(false);
     dialog->setLicenseEnabled(false);
     dialog->show();
     dialog->raise();
@@ -1640,12 +1767,22 @@ void TodoApp::updateSetting(const QString &key, const QVariant &value)
     }
     saveSettings();
     emit settingsChanged();
+    if (key == QStringLiteral("telemetryEnabled") && m_telemetry) {
+        m_telemetry->setEnabled(value.toBool());
+    }
+    if (key == QStringLiteral("telemetryEndpoint") && m_telemetry) {
+        m_telemetry->setEndpoint(QUrl(value.toString()));
+    }
     if (key == QStringLiteral("mainWallpaperMode")
             || key == QStringLiteral("mainCustomWallpaperPath")
             || key == QStringLiteral("mainWindowOpacity")
             || key == QStringLiteral("mainRightPanelOpacity")) {
         refreshWallpaper();
     }
+    trackTelemetry(QStringLiteral("setting_changed"),
+                   QStringLiteral("修改设置"),
+                   QStringLiteral("settings"),
+                   QJsonObject{{QStringLiteral("key"), key}});
 }
 
 QString TodoApp::exportData()
@@ -1666,6 +1803,9 @@ QString TodoApp::exportData()
         return QStringLiteral("导出失败");
     }
     file.write(QJsonDocument(bundle).toJson(QJsonDocument::Indented));
+    trackTelemetry(QStringLiteral("data_exported"),
+                   QStringLiteral("导出数据"),
+                   QStringLiteral("data"));
     return QStringLiteral("数据导出成功");
 }
 
@@ -1696,6 +1836,10 @@ QString TodoApp::importData()
     emit eventsChanged();
     emit settingsChanged();
     refreshNoteControllers();
+    trackTelemetry(QStringLiteral("data_imported"),
+                   QStringLiteral("导入数据"),
+                   QStringLiteral("data"),
+                   QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return QStringLiteral("数据导入成功");
 }
 
@@ -1717,6 +1861,10 @@ void TodoApp::setMainWallpaperMode(const QString &mode)
     saveSettings();
     emit settingsChanged();
     refreshWallpaper();
+    trackTelemetry(QStringLiteral("main_wallpaper_mode_changed"),
+                   QStringLiteral("切换主窗口背景"),
+                   QStringLiteral("settings"),
+                   QJsonObject{{QStringLiteral("mode"), nextMode}});
 }
 
 QString TodoApp::chooseMainWindowWallpaper()
@@ -1757,16 +1905,28 @@ QString TodoApp::chooseMainWindowWallpaper()
     saveSettings();
     emit settingsChanged();
     refreshWallpaper();
+    trackTelemetry(QStringLiteral("custom_wallpaper_changed"),
+                   QStringLiteral("手动上传背景图片"),
+                   QStringLiteral("settings"));
     return QStringLiteral("主窗口背景已更新");
 }
 
 QString TodoApp::summarizeAllNotes()
 {
+    trackTelemetry(QStringLiteral("ai_summary_all"),
+                   QStringLiteral("AI总结全部"),
+                   QStringLiteral("summary"),
+                   QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return sendPromptToUosAi(buildAllNotesSummaryPrompt());
 }
 
 QString TodoApp::summarizeNotesRange(const QString &scope)
 {
+    trackTelemetry(scope == QStringLiteral("month") ? QStringLiteral("ai_summary_month") : QStringLiteral("ai_summary_week"),
+                   scope == QStringLiteral("month") ? QStringLiteral("AI总结本月") : QStringLiteral("AI总结本周"),
+                   QStringLiteral("summary"),
+                   QJsonObject{{QStringLiteral("scope"), scope},
+                               {QStringLiteral("noteCount"), m_notes.size()}});
     return sendPromptToUosAi(buildNotesRangeSummaryPrompt(scope));
 }
 
