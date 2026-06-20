@@ -1,0 +1,10 @@
+[Unit]
+Description=XiaoU Todo telemetry daily rollup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/xiaou-telemetry
+EnvironmentFile=/etc/xiaou-telemetry.env
+ExecStart=/usr/bin/python3 /opt/xiaou-telemetry/telemetry_daily_rollup.py

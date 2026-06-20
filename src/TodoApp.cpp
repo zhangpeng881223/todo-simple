@@ -432,7 +432,7 @@ void TodoApp::startTelemetry()
             heartbeat.insert(QStringLiteral("visibleNoteWindows"), m_noteViews.size());
             heartbeat.insert(QStringLiteral("mainWindowVisible"), static_cast<bool>(m_listWindow && m_listWindow->isVisible()));
             trackTelemetry(QStringLiteral("session_heartbeat"),
-                           QStringLiteral("会话心跳"),
+                           QStringLiteral("心跳"),
                            QStringLiteral("app"),
                            heartbeat,
                            m_sessionTimer.isValid() ? m_sessionTimer.elapsed() / 1000.0 : 0.0);
@@ -731,7 +731,7 @@ QString TodoApp::summarizeNote(const QString &noteId)
         return QStringLiteral("未找到待办窗口");
     }
     trackTelemetry(QStringLiteral("ai_summary_note"),
-                   QStringLiteral("AI总结本窗口"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("summary"),
                    QJsonObject{{QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size()}});
     return sendPromptToUosAi(buildCurrentNoteSummaryPrompt(note));
@@ -774,7 +774,7 @@ QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
     properties.insert(QStringLiteral("errorCount"), result.errors.size());
     properties.insert(QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size());
     trackTelemetry(QStringLiteral("calendar_sync"),
-                   QStringLiteral("同步到日历"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("calendar"),
                    properties);
 
@@ -816,7 +816,7 @@ QString TodoApp::addTodoToNote(const QString &noteId, const QString &text)
         QTimer::singleShot(220, this, &TodoApp::triggerMainWindowPowderEffect);
     }
     trackTelemetry(QStringLiteral("todo_created"),
-                   QStringLiteral("新建待办项"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("todo"),
                    QJsonObject{{QStringLiteral("totalTodos"), totalTodos},
                                {QStringLiteral("noteTodoCount"), todos.size()}});
@@ -839,13 +839,13 @@ void TodoApp::commitNoteTodoText(const QString &noteId, const QString &todoId, c
         if (trimmed.isEmpty()) {
             todos.removeAt(i);
             trackTelemetry(QStringLiteral("todo_empty_removed"),
-                           QStringLiteral("空待办自动移除"),
+                           QStringLiteral("功能点击"),
                            QStringLiteral("todo"));
         } else {
             todo.insert(QStringLiteral("text"), trimmed);
             todos.replace(i, todo);
             trackTelemetry(QStringLiteral("todo_text_committed"),
-                           QStringLiteral("待办内容保存"),
+                           QStringLiteral("功能点击"),
                            QStringLiteral("todo"));
         }
         updateNoteTodos(noteId, todos);
@@ -870,7 +870,7 @@ void TodoApp::toggleNoteTodo(const QString &noteId, const QString &todoId)
         todos.replace(i, todo);
         updateNoteTodos(noteId, todos);
         trackTelemetry(nextCompleted ? QStringLiteral("todo_completed") : QStringLiteral("todo_uncompleted"),
-                       nextCompleted ? QStringLiteral("完成待办项") : QStringLiteral("取消完成待办项"),
+                       QStringLiteral("功能点击"),
                        QStringLiteral("todo"),
                        QJsonObject{{QStringLiteral("priority"), todo.value(QStringLiteral("priority")).toString(QStringLiteral("gray"))}});
         return;
@@ -889,7 +889,7 @@ void TodoApp::deleteNoteTodo(const QString &noteId, const QString &todoId)
             todos.removeAt(i);
             updateNoteTodos(noteId, todos);
             trackTelemetry(QStringLiteral("todo_deleted"),
-                           QStringLiteral("删除待办项"),
+                           QStringLiteral("功能点击"),
                            QStringLiteral("todo"),
                            QJsonObject{{QStringLiteral("noteTodoCount"), todos.size()}});
             return;
@@ -913,7 +913,7 @@ void TodoApp::setNoteTodoPriority(const QString &noteId, const QString &todoId, 
         todos.replace(i, todo);
         updateNoteTodos(noteId, todos);
         trackTelemetry(QStringLiteral("todo_priority_changed"),
-                       QStringLiteral("调整待办优先级"),
+                       QStringLiteral("功能点击"),
                        QStringLiteral("todo"),
                        QJsonObject{{QStringLiteral("priority"), priority}});
         return;
@@ -966,7 +966,7 @@ void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int
     }
     updateNoteTodos(noteId, next);
     trackTelemetry(QStringLiteral("todo_reordered"),
-                   QStringLiteral("待办排序"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("todo"),
                    QJsonObject{{QStringLiteral("fromIndex"), from},
                                {QStringLiteral("toIndex"), to}});
@@ -995,7 +995,7 @@ QString TodoApp::createNewNote()
     emit notesChanged();
     openNote(id);
     trackTelemetry(QStringLiteral("note_created"),
-                   QStringLiteral("新建待办页"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("note"),
                    QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return id;
@@ -1010,7 +1010,7 @@ void TodoApp::showNoteOnDesktop(const QString &noteId)
 {
     openNoteWithLayer(noteId, QStringLiteral("normal"));
     trackTelemetry(QStringLiteral("note_show_on_desktop"),
-                   QStringLiteral("在桌面显示待办页"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("note"));
 }
 
@@ -1122,7 +1122,7 @@ void TodoApp::deleteNote(const QString &noteId)
         view->deleteLater();
     }
     trackTelemetry(QStringLiteral("note_deleted"),
-                   QStringLiteral("删除待办页"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("note"),
                    QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
 }
@@ -1135,7 +1135,7 @@ void TodoApp::showListWindow()
         m_listWindow->raise();
         m_listWindow->requestActivate();
         trackTelemetry(QStringLiteral("main_window_opened"),
-                       QStringLiteral("打开主窗口"),
+                       QStringLiteral("页面访问"),
                        QStringLiteral("main_window"));
         return;
     }
@@ -1184,7 +1184,7 @@ void TodoApp::showListWindow()
     window->requestActivate();
     refreshWallpaper();
     trackTelemetry(QStringLiteral("main_window_opened"),
-                   QStringLiteral("打开主窗口"),
+                   QStringLiteral("页面访问"),
                    QStringLiteral("main_window"));
 }
 
@@ -1524,7 +1524,7 @@ void TodoApp::showSettingsWindow()
         m_settingsView->raise();
         m_settingsView->requestActivate();
         trackTelemetry(QStringLiteral("settings_opened"),
-                       QStringLiteral("打开设置"),
+                       QStringLiteral("页面访问"),
                        QStringLiteral("settings"));
         return;
     }
@@ -1536,7 +1536,7 @@ void TodoApp::showSettingsWindow()
     m_settingsView->raise();
     m_settingsView->requestActivate();
     trackTelemetry(QStringLiteral("settings_opened"),
-                   QStringLiteral("打开设置"),
+                   QStringLiteral("页面访问"),
                    QStringLiteral("settings"));
 }
 
@@ -1780,7 +1780,7 @@ void TodoApp::updateSetting(const QString &key, const QVariant &value)
         refreshWallpaper();
     }
     trackTelemetry(QStringLiteral("setting_changed"),
-                   QStringLiteral("修改设置"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("settings"),
                    QJsonObject{{QStringLiteral("key"), key}});
 }
@@ -1804,7 +1804,7 @@ QString TodoApp::exportData()
     }
     file.write(QJsonDocument(bundle).toJson(QJsonDocument::Indented));
     trackTelemetry(QStringLiteral("data_exported"),
-                   QStringLiteral("导出数据"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("data"));
     return QStringLiteral("数据导出成功");
 }
@@ -1837,7 +1837,7 @@ QString TodoApp::importData()
     emit settingsChanged();
     refreshNoteControllers();
     trackTelemetry(QStringLiteral("data_imported"),
-                   QStringLiteral("导入数据"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("data"),
                    QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return QStringLiteral("数据导入成功");
@@ -1862,7 +1862,7 @@ void TodoApp::setMainWallpaperMode(const QString &mode)
     emit settingsChanged();
     refreshWallpaper();
     trackTelemetry(QStringLiteral("main_wallpaper_mode_changed"),
-                   QStringLiteral("切换主窗口背景"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("settings"),
                    QJsonObject{{QStringLiteral("mode"), nextMode}});
 }
@@ -1906,7 +1906,7 @@ QString TodoApp::chooseMainWindowWallpaper()
     emit settingsChanged();
     refreshWallpaper();
     trackTelemetry(QStringLiteral("custom_wallpaper_changed"),
-                   QStringLiteral("手动上传背景图片"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("settings"));
     return QStringLiteral("主窗口背景已更新");
 }
@@ -1914,7 +1914,7 @@ QString TodoApp::chooseMainWindowWallpaper()
 QString TodoApp::summarizeAllNotes()
 {
     trackTelemetry(QStringLiteral("ai_summary_all"),
-                   QStringLiteral("AI总结全部"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("summary"),
                    QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return sendPromptToUosAi(buildAllNotesSummaryPrompt());
@@ -1923,7 +1923,7 @@ QString TodoApp::summarizeAllNotes()
 QString TodoApp::summarizeNotesRange(const QString &scope)
 {
     trackTelemetry(scope == QStringLiteral("month") ? QStringLiteral("ai_summary_month") : QStringLiteral("ai_summary_week"),
-                   scope == QStringLiteral("month") ? QStringLiteral("AI总结本月") : QStringLiteral("AI总结本周"),
+                   QStringLiteral("功能点击"),
                    QStringLiteral("summary"),
                    QJsonObject{{QStringLiteral("scope"), scope},
                                {QStringLiteral("noteCount"), m_notes.size()}});

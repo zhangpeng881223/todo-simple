@@ -16,6 +16,16 @@ TELEMETRY_TABLE_ID = os.environ.get("FEISHU_TELEMETRY_TABLE_ID", "")
 HOST = os.environ.get("TELEMETRY_HOST", "0.0.0.0")
 PORT = int(os.environ.get("TELEMETRY_PORT", "18080"))
 MAX_EVENTS_PER_REQUEST = 50
+ALLOWED_EVENT_TYPES = {
+    "应用启动",
+    "应用退出",
+    "页面访问",
+    "功能点击",
+    "反馈提交",
+    "错误",
+    "心跳",
+    "测试事件",
+}
 
 _tenant_token = ""
 _tenant_token_expire_at = 0
@@ -105,9 +115,12 @@ def event_to_fields(event):
     properties = event.get("properties")
     if not isinstance(properties, dict):
         properties = {}
+    event_type = sanitize_string(event.get("eventType"), 120)
+    if event_type not in ALLOWED_EVENT_TYPES:
+        event_type = "功能点击"
     return {
         "事件名称": sanitize_string(event.get("eventName"), 120),
-        "事件类型": sanitize_string(event.get("eventType"), 120),
+        "事件类型": event_type,
         "发生时间": parse_event_time(event.get("eventTime")),
         "匿名设备ID": sanitize_string(event.get("anonymousDeviceId"), 120),
         "会话ID": sanitize_string(event.get("sessionId"), 120),
