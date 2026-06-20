@@ -48,6 +48,7 @@ D.ApplicationWindow {
     readonly property color textColor: lightTheme ? "#252525" : "#f3f4f4"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.56) : "#9aa2a6"
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.34) : "#6f777b"
+    readonly property color placeholderColor: lightTheme ? root.weakColor : "#a8b0b5"
     readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 196 / 255, 48 / 255, 0.36) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.26)
     readonly property color selectedBorderColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.28) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.24)
     readonly property color glassControlColor: lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.055)
@@ -74,6 +75,7 @@ D.ApplicationWindow {
     property string contextDeleteNoteTitle: ""
     property string feedbackDraftContent: ""
     property string feedbackDraftContact: ""
+    property var activeTodoEdit: null
     property string draggingTodoId: ""
     property int dragStartIndex: -1
     property int dragTargetIndex: -1
@@ -224,6 +226,71 @@ D.ApplicationWindow {
         return false
     }
 
+    function escapeRichText(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;")
+    }
+
+    function highlightSearchText(value) {
+        var source = String(value || "")
+        var term = root.searchTerm.trim()
+        if (term.length === 0) {
+            return root.escapeRichText(source)
+        }
+
+        var lowerSource = source.toLowerCase()
+        var lowerTerm = term.toLowerCase()
+        var cursor = 0
+        var result = ""
+        var highlightBg = root.lightTheme ? "#ffe08a" : "#7a5a16"
+        var highlightFg = root.lightTheme ? "#1f1f1f" : "#fff2c2"
+
+        while (cursor < source.length) {
+            var index = lowerSource.indexOf(lowerTerm, cursor)
+            if (index < 0) {
+                result += root.escapeRichText(source.slice(cursor))
+                break
+            }
+            result += root.escapeRichText(source.slice(cursor, index))
+            result += "<span style=\"background-color:" + highlightBg
+                    + "; color:" + highlightFg
+                    + "; font-weight:600;\">"
+                    + root.escapeRichText(source.slice(index, index + term.length))
+                    + "</span>"
+            cursor = index + term.length
+        }
+
+        return result
+    }
+
+    function containsSearchTerm(value) {
+        var term = root.searchTerm.trim().toLowerCase()
+        return term.length > 0 && String(value || "").toLowerCase().indexOf(term) >= 0
+    }
+
+    function excerptAroundSearch(value, maxChars) {
+        var source = String(value || "")
+        if (source.length <= maxChars) {
+            return source
+        }
+
+        var term = root.searchTerm.trim().toLowerCase()
+        var index = term.length > 0 ? source.toLowerCase().indexOf(term) : -1
+        if (index < 0) {
+            return source.slice(0, Math.max(0, maxChars - 1)) + "…"
+        }
+
+        var available = Math.max(term.length, maxChars - 2)
+        var start = Math.max(0, index - Math.floor((available - term.length) / 2))
+        var end = Math.min(source.length, start + available)
+        start = Math.max(0, end - available)
+        return (start > 0 ? "…" : "") + source.slice(start, end) + (end < source.length ? "…" : "")
+    }
+
     function matchedCount() {
         var count = 0
         var notes = app.notesList
@@ -288,11 +355,27 @@ D.ApplicationWindow {
     function previewText(note) {
         var todos = note.todos || []
         var lines = []
+        var term = root.searchTerm.trim().toLowerCase()
+        if (term.length > 0) {
+            for (var matchedIndex = 0; matchedIndex < todos.length && lines.length < 2; matchedIndex++) {
+                var matchedText = (todos[matchedIndex].text || "").trim()
+                if (matchedText.length > 0 && matchedText.toLowerCase().indexOf(term) >= 0) {
+                    lines.push(matchedText)
+                }
+            }
+            if (lines.length > 0) {
+                return lines.join("，")
+            }
+        }
         for (var i = 0; i < todos.length && lines.length < 2; i++) {
             var text = (todos[i].text || "").trim()
             if (text.length > 0) lines.push(text)
         }
         return lines.length > 0 ? lines.join("，") : "暂无待办内容"
+    }
+
+    function sidebarPreviewText(note) {
+        return excerptAroundSearch(previewText(note), 18)
     }
 
     function unfinishedTodoCount() {
@@ -397,8 +480,13 @@ D.ApplicationWindow {
     }
 
     function clearInputFocusAt(x, y) {
-        if (pointInItem(searchBox, x, y) || pointInItem(addTodoBox, x, y) || pointInItem(titleEdit, x, y))
+        if (pointInItem(searchBox, x, y)
+                || pointInItem(addTodoBox, x, y)
+                || pointInItem(titleEdit, x, y)
+                || pointInItem(activeTodoEdit, x, y))
             return
+        if (activeTodoEdit)
+            activeTodoEdit.focus = false
         searchInput.focus = false
         addTodoInput.focus = false
         titleEdit.focus = false
@@ -414,6 +502,7 @@ D.ApplicationWindow {
     Connections {
         target: app
         function onSettingsChanged() { root.syncDtkPalette() }
+        function onFeedbackDialogRequested() { feedbackDialog.open() }
         function onNotesChanged() {
             root.ensureSelection()
             root.syncDetailTodos(false)
@@ -447,6 +536,10 @@ D.ApplicationWindow {
             D.MenuItem {
                 text: "设置"
                 onTriggered: app.showSettingsWindow()
+            }
+            D.MenuItem {
+                text: "反馈建议"
+                onTriggered: feedbackDialog.open()
             }
             D.Menu {
                 title: "主题"
@@ -670,7 +763,7 @@ D.ApplicationWindow {
                                     height: 28
                                     text: root.searchTerm
                                     placeholderText: "搜索"
-                                    placeholderTextColor: root.weakColor
+                                    placeholderTextColor: root.placeholderColor
                                     color: root.textColor
                                     selectByMouse: true
                                     font.pixelSize: 13
@@ -910,11 +1003,13 @@ D.ApplicationWindow {
 
                                                 D.Label {
                                                     Layout.fillWidth: true
-                                                    text: modelData.title || "无标题"
+                                                    text: root.highlightSearchText(modelData.title || "无标题")
+                                                    textFormat: Text.RichText
                                                     color: root.textColor
                                                     font.pixelSize: 14
                                                     font.weight: Font.Normal
                                                     elide: Text.ElideRight
+                                                    clip: true
                                                 }
 
                                                 D.Label {
@@ -932,16 +1027,18 @@ D.ApplicationWindow {
 
                                                 D.Label {
                                                     Layout.fillWidth: true
-                                                    text: root.previewText(modelData)
+                                                    text: root.highlightSearchText(root.sidebarPreviewText(modelData))
+                                                    textFormat: Text.RichText
                                                     color: root.mutedColor
                                                     font.pixelSize: 12
                                                     font.weight: Font.Medium
                                                     elide: Text.ElideRight
                                                     maximumLineCount: 2
+                                                    clip: true
                                                 }
 
                                                 Item {
-                                                    Layout.preferredWidth: noteRow.confirmingDelete ? 90 : (noteRow.hovered ? 64 : 42)
+                                                    Layout.preferredWidth: noteRow.confirmingDelete ? 64 : (noteRow.hovered ? 64 : 42)
                                                     Layout.preferredHeight: 24
 
                                                     Row {
@@ -972,8 +1069,8 @@ D.ApplicationWindow {
                                                     Rectangle {
                                                         anchors.right: parent.right
                                                         anchors.verticalCenter: parent.verticalCenter
-                                                        width: 84
-                                                        height: 26
+                                                        width: 50
+                                                        height: 24
                                                         radius: 100
                                                         visible: noteRow.confirmingDelete
                                                         color: root.redColor
@@ -981,7 +1078,7 @@ D.ApplicationWindow {
 
                                                         D.Label {
                                                             anchors.centerIn: parent
-                                                            text: "确认删除"
+                                                            text: "删除"
                                                             color: "white"
                                                             font.pixelSize: 12
                                                             font.weight: Font.Bold
@@ -1002,7 +1099,7 @@ D.ApplicationWindow {
                                                         id: listDeleteMouse
                                                         anchors.right: parent.right
                                                         anchors.verticalCenter: parent.verticalCenter
-                                                        width: noteRow.confirmingDelete ? 84 : 64
+                                                        width: noteRow.confirmingDelete ? 50 : 64
                                                         height: 28
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
@@ -1095,7 +1192,7 @@ D.ApplicationWindow {
                     anchors.leftMargin: 28
                     anchors.rightMargin: 28
                     anchors.topMargin: root.sidebarSearchTop - 16
-                    anchors.bottomMargin: root.sidebarInset
+                    anchors.bottomMargin: root.sidebarInset + 4
                     spacing: 12
                     visible: !!detailPane.note
 
@@ -1108,7 +1205,7 @@ D.ApplicationWindow {
                             id: titleEdit
                             Layout.fillWidth: true
                             text: detailPane.note ? detailPane.note.title : ""
-                            color: root.textColor
+                            color: root.containsSearchTerm(text) && !activeFocus ? "transparent" : root.textColor
                             font.pixelSize: 24
                             font.weight: Font.ExtraBold
                             selectByMouse: true
@@ -1122,6 +1219,19 @@ D.ApplicationWindow {
                                 hoverEnabled: true
                                 acceptedButtons: Qt.NoButton
                                 cursorShape: Qt.IBeamCursor
+                            }
+
+                            D.Label {
+                                anchors.fill: parent
+                                visible: root.containsSearchTerm(titleEdit.text) && !titleEdit.activeFocus
+                                text: root.highlightSearchText(titleEdit.text)
+                                textFormat: Text.RichText
+                                color: root.textColor
+                                font.pixelSize: titleEdit.font.pixelSize
+                                font.weight: titleEdit.font.weight
+                                elide: Text.ElideRight
+                                clip: true
+                                verticalAlignment: Text.AlignVCenter
                             }
                         }
 
@@ -1267,6 +1377,7 @@ D.ApplicationWindow {
                                 property real dragLiftOffset: 0
                                 property bool menuVisible: priorityMouse.containsMouse || priorityMenu.hovered
                                 property bool activeRow: rowHover.hovered || menuVisible || confirmingDelete || root.draggingTodoId === model.id
+                                readonly property bool searchMatched: root.containsSearchTerm(model.text || "")
                                 readonly property bool hasPriorityStripe: app.priorityStyle !== "simple" && priority !== "gray" && priority !== "none"
                                 readonly property bool isDraggingThis: root.draggingTodoId === model.id
                                 property real dragPreviewOffset: {
@@ -1497,7 +1608,7 @@ D.ApplicationWindow {
 	                                        Layout.preferredHeight: root.wrapTodos ? Math.max(24, contentHeight + 2) : 24
                                         implicitWidth: 0
                                         text: model.text || ""
-                                        color: todoRow.done ? root.mutedColor : root.textColor
+                                        color: todoRow.searchMatched && !activeFocus ? "transparent" : (todoRow.done ? root.mutedColor : root.textColor)
                                         placeholderText: "新待办"
                                         placeholderTextColor: root.mutedColor
                                         selectByMouse: true
@@ -1521,7 +1632,35 @@ D.ApplicationWindow {
                                             focus = false
                                             event.accepted = true
                                         }
-                                        onActiveFocusChanged: if (!activeFocus) app.commitNoteTodoText(root.selectedNoteId, model.id, text)
+                                        onActiveFocusChanged: {
+                                            if (activeFocus) {
+                                                root.activeTodoEdit = todoEdit
+                                            } else {
+                                                if (root.activeTodoEdit === todoEdit)
+                                                    root.activeTodoEdit = null
+                                                app.commitNoteTodoText(root.selectedNoteId, model.id, text)
+                                            }
+                                        }
+
+                                        D.Label {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: todoEdit.leftPadding
+                                            anchors.rightMargin: todoEdit.rightPadding
+                                            anchors.topMargin: todoEdit.topPadding
+                                            anchors.bottomMargin: todoEdit.bottomPadding
+                                            visible: todoRow.searchMatched && !todoEdit.activeFocus
+                                            text: root.highlightSearchText(todoEdit.text)
+                                            textFormat: Text.RichText
+                                            color: todoRow.done ? root.mutedColor : root.textColor
+                                            font.pixelSize: todoEdit.font.pixelSize
+                                            font.weight: todoEdit.font.weight
+                                            font.strikeout: todoRow.done
+                                            elide: root.wrapTodos ? Text.ElideNone : Text.ElideRight
+                                            wrapMode: root.wrapTodos ? Text.Wrap : Text.NoWrap
+                                            maximumLineCount: root.wrapTodos ? 0 : 1
+                                            clip: true
+                                            verticalAlignment: root.wrapTodos ? Text.AlignTop : Text.AlignVCenter
+                                        }
                                     }
 
 	                                    Item {
@@ -1639,95 +1778,66 @@ D.ApplicationWindow {
                         }
                     }
 
-                    RowLayout {
+                    Rectangle {
+                        id: addTodoBox
                         Layout.fillWidth: true
                         Layout.minimumHeight: 38
                         Layout.preferredHeight: 38
                         Layout.maximumHeight: 38
-                        spacing: 10
+                        z: 20
+                        radius: 100
+                        color: addTodoInput.activeFocus
+                               ? root.glassControlFocusColor
+                               : (addTodoHover.hovered ? root.glassControlHoverColor : root.glassControlColor)
+                        border.width: 1
+                        border.color: addTodoInput.activeFocus
+                                      ? root.glassControlFocusBorderColor
+                                      : (addTodoHover.hovered ? root.glassControlHoverBorderColor : root.glassControlBorderColor)
+                        antialiasing: true
 
-	                    Rectangle {
-                            id: addTodoBox
-	                        Layout.fillWidth: true
-                            Layout.minimumHeight: 38
-	                        Layout.preferredHeight: 38
-                            Layout.maximumHeight: 38
-	                        radius: 100
-	                        color: addTodoInput.activeFocus
-	                               ? root.glassControlFocusColor
-	                               : (addTodoHover.hovered ? root.glassControlHoverColor : root.glassControlColor)
-	                        border.width: 1
-	                        border.color: addTodoInput.activeFocus
-	                                      ? root.glassControlFocusBorderColor
-	                                      : (addTodoHover.hovered ? root.glassControlHoverBorderColor : root.glassControlBorderColor)
-	                        antialiasing: true
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
 
-	                        Behavior on color { ColorAnimation { duration: 120 } }
-	                        Behavior on border.color { ColorAnimation { duration: 120 } }
-
-	                        HoverHandler {
-	                            id: addTodoHover
-	                        }
-
-	                        MouseArea {
-	                            anchors.fill: parent
-	                            hoverEnabled: true
-	                            cursorShape: Qt.IBeamCursor
-	                            onClicked: addTodoInput.forceActiveFocus()
-	                        }
-
-	                        QQC.TextField {
-	                            id: addTodoInput
-	                            anchors.fill: parent
-	                            anchors.leftMargin: 12
-	                            anchors.rightMargin: 12
-	                            placeholderText: "添加一条待办..."
-	                            placeholderTextColor: root.weakColor
-	                            color: root.textColor
-	                            selectByMouse: true
-	                            font.pixelSize: 13
-	                            font.weight: Font.Medium
-	                            background: Item {}
-	                            onAccepted: {
-	                                if (detailPane.note && text.trim().length > 0) {
-	                                    app.addTodoToNote(detailPane.note.id, text)
-	                                    text = ""
-	                                }
-	                            }
-	                        }
-                    }
+                        HoverHandler {
+                            id: addTodoHover
+                        }
 
                         Rectangle {
-                            id: feedbackButton
-                            Layout.preferredWidth: 58
-                            Layout.minimumHeight: 38
-                            Layout.preferredHeight: 38
-                            Layout.maximumHeight: 38
-                            radius: 100
-                            color: feedbackMouse.pressed
-                                   ? root.glassControlFocusColor
-                                   : (feedbackMouse.containsMouse ? root.glassControlHoverColor : root.glassControlColor)
-                            border.width: 1
-                            border.color: feedbackMouse.containsMouse ? root.glassControlHoverBorderColor : root.glassControlBorderColor
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: parent.radius - 1
                             antialiasing: true
+                            color: addTodoInput.activeFocus
+                                   ? (root.lightTheme ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.13))
+                                   : (addTodoHover.hovered
+                                      ? (root.lightTheme ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.10))
+                                      : (root.lightTheme ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.075)))
+                        }
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.IBeamCursor
+                            onClicked: addTodoInput.forceActiveFocus()
+                        }
 
-                            D.Label {
-                                anchors.centerIn: parent
-                                text: "反馈"
-                                color: feedbackMouse.containsMouse ? root.textColor : root.mutedColor
-                                font.pixelSize: 13
-                                font.weight: Font.Medium
-                            }
-
-                            MouseArea {
-                                id: feedbackMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: feedbackDialog.open()
+                        QQC.TextField {
+                            id: addTodoInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            placeholderText: "添加一条待办..."
+                            placeholderTextColor: root.placeholderColor
+                            color: root.textColor
+                            selectByMouse: true
+                            font.pixelSize: 13
+                            font.weight: Font.Medium
+                            background: Item {}
+                            onAccepted: {
+                                if (detailPane.note && text.trim().length > 0) {
+                                    app.addTodoToNote(detailPane.note.id, text)
+                                    text = ""
+                                }
                             }
                         }
                     }
@@ -2076,8 +2186,11 @@ D.ApplicationWindow {
                         }
                         root.feedbackDraftContent = content
                         root.feedbackDraftContact = feedbackContactInput.text.trim()
+                        var result = app.submitFeedback(root.feedbackDraftContent, root.feedbackDraftContact)
+                        feedbackContentInput.text = ""
+                        feedbackContactInput.text = ""
                         feedbackDialog.close()
-                        root.notify("反馈入口已准备，待接入存储")
+                        root.notify(result)
                     }
                 }
             }

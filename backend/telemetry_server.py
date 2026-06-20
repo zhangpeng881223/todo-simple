@@ -26,6 +26,17 @@ ALLOWED_EVENT_TYPES = {
     "心跳",
     "测试事件",
 }
+CORE_EVENT_NAMES = {
+    "app_start",
+    "app_exit",
+    "session_heartbeat",
+    "feedback_submitted",
+    "desktop_ai_summary_clicked",
+    "calendar_sync",
+    "ai_summary_week",
+    "ai_summary_month",
+    "note_window_layer_changed",
+}
 
 _tenant_token = ""
 _tenant_token_expire_at = 0
@@ -133,8 +144,21 @@ def event_to_fields(event):
     }
 
 
+def should_store_event(event):
+    event_name = sanitize_string(event.get("eventName"), 120)
+    event_type = sanitize_string(event.get("eventType"), 120)
+    return (
+        event_name in CORE_EVENT_NAMES
+        or event_type in {"反馈提交", "错误"}
+    )
+
+
 def write_telemetry_events(events):
-    records = [{"fields": event_to_fields(event)} for event in events[:MAX_EVENTS_PER_REQUEST]]
+    records = [
+        {"fields": event_to_fields(event)}
+        for event in events[:MAX_EVENTS_PER_REQUEST]
+        if should_store_event(event)
+    ]
     if not records:
         return {"created": 0}
 

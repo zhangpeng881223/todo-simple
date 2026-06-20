@@ -87,6 +87,7 @@ public:
     Q_INVOKABLE void deleteNote(const QString &noteId);
     Q_INVOKABLE void updateNoteTitle(const QString &noteId, const QString &title);
     Q_INVOKABLE QString summarizeNote(const QString &noteId);
+    QString summarizeDesktopNote(const QString &noteId);
     Q_INVOKABLE QString syncNoteTodosToSystemCalendar(const QString &noteId);
     Q_INVOKABLE QString addTodoToNote(const QString &noteId, const QString &text);
     Q_INVOKABLE void commitNoteTodoText(const QString &noteId, const QString &todoId, const QString &text);
@@ -100,6 +101,8 @@ public:
     Q_INVOKABLE void triggerMainWindowPowderEffect();
     // Q_INVOKABLE void showCalendarWindow();
     Q_INVOKABLE void showSettingsWindow();
+    Q_INVOKABLE void showFeedbackDialog();
+    Q_INVOKABLE QString submitFeedback(const QString &content, const QString &contact);
     Q_INVOKABLE void showAboutDialog();
     // Q_INVOKABLE void showEventEditor(const QVariantMap &eventData);
     Q_INVOKABLE void closeWindow(QWindow *window);
@@ -127,12 +130,17 @@ signals:
     void settingsChanged();
     void backdropProtectionChanged();
     void wallpaperChanged();
+    void feedbackDialogRequested();
 
 private:
     QQuickView *createView(const QUrl &source, const QSize &size, const QSize &minSize, bool transparent, bool resizable);
     void createTray();
     void handleTrayTrigger();
     void openNoteWithLayer(const QString &noteId, const QString &layer);
+    QString summarizeNoteForSource(const QString &noteId, const QString &eventName, const QString &source);
+    QString latestCreatedNoteId() const;
+    void showLatestCreatedNoteOnDesktop();
+    void showDefaultLaunchWindows();
     void loadData();
     void saveNotes() const;
     void saveEvents() const;
@@ -146,6 +154,7 @@ private:
     void syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType);
     QString generateDefaultNoteTitle() const;
     QPoint defaultNotePosition(int xOffset = 20, int y = 20) const;
+    void showUosAiAssistant() const;
     QString sendPromptToUosAi(const QString &prompt) const;
     QString defaultNoteSummaryTemplate() const;
     QString defaultWeekSummaryTemplate() const;

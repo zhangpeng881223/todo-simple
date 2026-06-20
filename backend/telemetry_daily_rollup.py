@@ -173,6 +173,8 @@ def build_metrics(records, target_day):
     heartbeat_count = 0
     feedback_count = 0
     error_count = 0
+    core_feature_counts = defaultdict(int)
+    layer_counts = defaultdict(int)
 
     for record in records:
         fields = record.get("fields", {})
@@ -208,6 +210,21 @@ def build_metrics(records, target_day):
                 feedback_count += 1
             if event_type == "错误":
                 error_count += 1
+            if event_name in {
+                "note_window_layer_changed",
+                "desktop_ai_summary_clicked",
+                "calendar_sync",
+                "ai_summary_week",
+                "ai_summary_month",
+            }:
+                core_feature_counts[event_name] += 1
+                if event_name == "note_window_layer_changed":
+                    try:
+                        properties = json.loads(fields.get("事件属性JSON") or "{}")
+                    except (TypeError, json.JSONDecodeError):
+                        properties = {}
+                    next_layer = str(properties.get("nextLayer") or "unknown")
+                    layer_counts[next_layer] += 1
 
     new_users = {
         device_id
@@ -216,6 +233,34 @@ def build_metrics(records, target_day):
     }
     durations = [duration for duration in session_duration.values() if duration > 0]
     avg_duration = sum(durations) / len(durations) if durations else 0
+    duration_buckets = {
+        "0-1分钟": 0,
+        "1-5分钟": 0,
+        "5-15分钟": 0,
+        "15-30分钟": 0,
+        "30分钟以上": 0,
+    }
+    for duration in durations:
+        if duration < 60:
+            duration_buckets["0-1分钟"] += 1
+        elif duration < 300:
+            duration_buckets["1-5分钟"] += 1
+        elif duration < 900:
+            duration_buckets["5-15分钟"] += 1
+        elif duration < 1800:
+            duration_buckets["15-30分钟"] += 1
+        else:
+            duration_buckets["30分钟以上"] += 1
+    feature_summary = {
+        "层级切换": core_feature_counts["note_window_layer_changed"],
+        "层级-normal": layer_counts["normal"],
+        "层级-bottom": layer_counts["bottom"],
+        "层级-top": layer_counts["top"],
+        "桌面AI总结": core_feature_counts["desktop_ai_summary_clicked"],
+        "同步到日历": core_feature_counts["calendar_sync"],
+        "总结本周": core_feature_counts["ai_summary_week"],
+        "总结本月": core_feature_counts["ai_summary_month"],
+    }
 
     return {
         "日期": int(datetime.combine(target_day, dt_time.min, LOCAL_TZ).timestamp() * 1000),
@@ -230,7 +275,12 @@ def build_metrics(records, target_day):
         "反馈提交数": feedback_count,
         "错误数": error_count,
         "平均使用时长秒": round(avg_duration, 2),
-        "数据备注": f"自动汇总，来源记录数 {len(records)}，生成时间 {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')}",
+        "数据备注": (
+            f"自动汇总，来源记录数 {len(records)}，"
+            f"使用时长分布 {json.dumps(duration_buckets, ensure_ascii=False, separators=(',', ':'))}，"
+            f"核心功能点击 {json.dumps(feature_summary, ensure_ascii=False, separators=(',', ':'))}，"
+            f"生成时间 {datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
+        ),
     }
 
 

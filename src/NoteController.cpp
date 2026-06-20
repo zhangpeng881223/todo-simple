@@ -272,7 +272,7 @@ void NoteController::hide()
 
 QString NoteController::summarizeToday()
 {
-    return m_app->summarizeNote(m_noteId);
+    return m_app->summarizeDesktopNote(m_noteId);
 }
 
 void NoteController::resetSummaryTemplate()

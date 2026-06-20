@@ -39,6 +39,7 @@
 #include <QScreen>
 #include <QSignalBlocker>
 #include <QStandardPaths>
+#include <QSet>
 #include <QTimer>
 #include <QUrl>
 #include <QWindow>
@@ -64,6 +65,25 @@ constexpr double DarkThemeWindowOpacity = 0.37;
 constexpr double DarkThemeRightPanelOpacity = 0.26;
 constexpr double DarkThemeWallpaperBlur = 0.70;
 constexpr int DarkThemeMainAppearanceVersion = 1;
+constexpr int TelemetryHeartbeatIntervalMs = 5 * 60 * 1000;
+
+bool isCoreTelemetryEvent(const QString &eventName, const QString &eventType)
+{
+    static const QSet<QString> coreEvents{
+        QStringLiteral("app_start"),
+        QStringLiteral("app_exit"),
+        QStringLiteral("session_heartbeat"),
+        QStringLiteral("feedback_submitted"),
+        QStringLiteral("desktop_ai_summary_clicked"),
+        QStringLiteral("calendar_sync"),
+        QStringLiteral("ai_summary_week"),
+        QStringLiteral("ai_summary_month"),
+        QStringLiteral("note_window_layer_changed")
+    };
+    return coreEvents.contains(eventName) ||
+           eventType == QStringLiteral("反馈提交") ||
+           eventType == QStringLiteral("错误");
+}
 
 QString isoNow()
 {
@@ -119,7 +139,7 @@ Qt::WindowFlags baseViewFlags(bool resizable)
 
 Qt::WindowFlags noteViewFlags(const QString &layer)
 {
-    Qt::WindowFlags flags = baseViewFlags(true);
+    Qt::WindowFlags flags = baseViewFlags(true) | Qt::Tool;
     const QString normalized = normalizedWindowLayer(layer);
     if (normalized == QStringLiteral("bottom")) {
         flags |= Qt::WindowStaysOnBottomHint;
@@ -371,26 +391,19 @@ void TodoApp::initialize()
     ensureSeedData();
     createTray();
 
-    if (!m_notes.isEmpty()) {
-        QVector<QJsonObject> sorted;
-        for (const QJsonValue &value : m_notes) {
-            sorted.append(value.toObject());
-        }
-        std::sort(sorted.begin(), sorted.end(), [](const QJsonObject &a, const QJsonObject &b) {
-            return valueString(a, QStringLiteral("updatedDate"), valueString(a, QStringLiteral("createdDate"))) >
-                   valueString(b, QStringLiteral("updatedDate"), valueString(b, QStringLiteral("createdDate")));
-        });
-        openNote(sorted.first().value(QStringLiteral("id")).toVariant().toString());
-    } else {
-        createNewNote();
-    }
-
     const QStringList args = QCoreApplication::arguments();
     QTimer::singleShot(0, this, [this, args]() {
         if (args.contains(QStringLiteral("--show-all"))) {
-            showListWindow();
+            showDefaultLaunchWindows();
             // showCalendarWindow();
             showSettingsWindow();
+            return;
+        }
+        const bool hasExplicitWindowArg = args.contains(QStringLiteral("--list")) ||
+                                          args.contains(QStringLiteral("--effects")) ||
+                                          args.contains(QStringLiteral("--settings"));
+        if (!hasExplicitWindowArg) {
+            showDefaultLaunchWindows();
             return;
         }
         if (args.contains(QStringLiteral("--list"))) {
@@ -426,7 +439,7 @@ void TodoApp::startTelemetry()
 
     if (!m_telemetryHeartbeatTimer) {
         m_telemetryHeartbeatTimer = new QTimer(this);
-        m_telemetryHeartbeatTimer->setInterval(60000);
+        m_telemetryHeartbeatTimer->setInterval(TelemetryHeartbeatIntervalMs);
         connect(m_telemetryHeartbeatTimer, &QTimer::timeout, this, [this]() {
             QJsonObject heartbeat;
             heartbeat.insert(QStringLiteral("visibleNoteWindows"), m_noteViews.size());
@@ -451,6 +464,9 @@ void TodoApp::trackTelemetry(const QString &eventName,
                              double durationSeconds)
 {
     if (!m_telemetry) {
+        return;
+    }
+    if (!isCoreTelemetryEvent(eventName, eventType)) {
         return;
     }
     m_telemetry->track(eventName, eventType, module, properties, durationSeconds);
@@ -674,6 +690,11 @@ QString TodoApp::cycleNoteWindowLayer(const QString &noteId)
         emit notesChanged();
         refreshNoteControllers(noteId);
         applyNoteWindowLayer(noteId, true);
+        trackTelemetry(QStringLiteral("note_window_layer_changed"),
+                       QStringLiteral("功能点击"),
+                       QStringLiteral("desktop_note"),
+                       QJsonObject{{QStringLiteral("nextLayer"), next},
+                                   {QStringLiteral("previousLayer"), current}});
         return next;
     }
 
@@ -726,14 +747,25 @@ void TodoApp::updateNoteTitle(const QString &noteId, const QString &title)
 
 QString TodoApp::summarizeNote(const QString &noteId)
 {
+    return summarizeNoteForSource(noteId, QStringLiteral("note_ai_summary_clicked"), QStringLiteral("main_window"));
+}
+
+QString TodoApp::summarizeDesktopNote(const QString &noteId)
+{
+    return summarizeNoteForSource(noteId, QStringLiteral("desktop_ai_summary_clicked"), QStringLiteral("desktop_note"));
+}
+
+QString TodoApp::summarizeNoteForSource(const QString &noteId, const QString &eventName, const QString &source)
+{
     const QJsonObject note = noteById(noteId);
     if (note.isEmpty()) {
         return QStringLiteral("未找到待办窗口");
     }
-    trackTelemetry(QStringLiteral("ai_summary_note"),
+    trackTelemetry(eventName,
                    QStringLiteral("功能点击"),
                    QStringLiteral("summary"),
-                   QJsonObject{{QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size()}});
+                   QJsonObject{{QStringLiteral("source"), source},
+                               {QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size()}});
     return sendPromptToUosAi(buildCurrentNoteSummaryPrompt(note));
 }
 
@@ -999,6 +1031,43 @@ QString TodoApp::createNewNote()
                    QStringLiteral("note"),
                    QJsonObject{{QStringLiteral("noteCount"), m_notes.size()}});
     return id;
+}
+
+QString TodoApp::latestCreatedNoteId() const
+{
+    QString latestId;
+    QString latestCreated;
+    for (const QJsonValue &value : m_notes) {
+        const QJsonObject note = value.toObject();
+        const QString noteId = note.value(QStringLiteral("id")).toVariant().toString();
+        if (noteId.isEmpty()) {
+            continue;
+        }
+        const QString created = valueString(note,
+                                            QStringLiteral("createdDate"),
+                                            valueString(note, QStringLiteral("updatedDate")));
+        if (latestId.isEmpty() || created > latestCreated) {
+            latestId = noteId;
+            latestCreated = created;
+        }
+    }
+    return latestId;
+}
+
+void TodoApp::showLatestCreatedNoteOnDesktop()
+{
+    const QString noteId = latestCreatedNoteId();
+    if (noteId.isEmpty()) {
+        createNewNote();
+        return;
+    }
+    openNoteWithLayer(noteId, QStringLiteral("normal"));
+}
+
+void TodoApp::showDefaultLaunchWindows()
+{
+    showLatestCreatedNoteOnDesktop();
+    showListWindow();
 }
 
 void TodoApp::openNote(const QString &noteId)
@@ -1540,6 +1609,37 @@ void TodoApp::showSettingsWindow()
                    QStringLiteral("settings"));
 }
 
+void TodoApp::showFeedbackDialog()
+{
+    showListWindow();
+    QTimer::singleShot(0, this, [this]() {
+        emit feedbackDialogRequested();
+    });
+}
+
+QString TodoApp::submitFeedback(const QString &content, const QString &contact)
+{
+    const QString trimmedContent = content.trimmed();
+    if (trimmedContent.isEmpty()) {
+        return QStringLiteral("请先输入反馈内容");
+    }
+
+    QJsonObject properties;
+    properties.insert(QStringLiteral("content"), trimmedContent.left(2000));
+    properties.insert(QStringLiteral("contact"), contact.trimmed().left(300));
+    properties.insert(QStringLiteral("contentLength"), trimmedContent.size());
+    properties.insert(QStringLiteral("hasContact"), !contact.trimmed().isEmpty());
+
+    trackTelemetry(QStringLiteral("feedback_submitted"),
+                   QStringLiteral("反馈提交"),
+                   QStringLiteral("feedback"),
+                   properties);
+    if (m_telemetry) {
+        m_telemetry->flush();
+    }
+    return QStringLiteral("反馈已提交，感谢帮助小U变得更好");
+}
+
 QVariantList TodoApp::buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const
 {
     const QImage image = snapshot.toImage().convertToFormat(QImage::Format_RGBA8888);
@@ -2009,6 +2109,7 @@ void TodoApp::createTray()
         }
     });
     m_trayMenu->addSeparator();
+    m_trayMenu->addAction(QStringLiteral("反馈建议"), this, &TodoApp::showFeedbackDialog);
     m_trayMenu->addAction(QStringLiteral("设置"), this, &TodoApp::showSettingsWindow);
     m_trayMenu->addAction(QStringLiteral("退出"), qApp, &QApplication::quit);
     m_tray->setContextMenu(m_trayMenu);
@@ -2271,24 +2372,70 @@ QPoint TodoApp::defaultNotePosition(int xOffset, int y) const
     return QPoint(100, 100);
 }
 
+void TodoApp::showUosAiAssistant() const
+{
+    QProcess launchProcess;
+    launchProcess.start(QStringLiteral("dbus-send"), {
+        QStringLiteral("--session"),
+        QStringLiteral("--dest=com.deepin.copilot"),
+        QStringLiteral("--print-reply"),
+        QStringLiteral("/com/deepin/copilot"),
+        QStringLiteral("com.deepin.copilot.launchChatPage")
+    });
+
+    launchProcess.waitForFinished(1500);
+
+    if (!QProcess::startDetached(QStringLiteral("/usr/bin/uos-ai-assistant"), {QStringLiteral("--chat")})) {
+        QProcess::startDetached(QStringLiteral("gtk-launch"), {QStringLiteral("uos-ai-assistant")});
+    }
+
+    const QString activateScript = QStringLiteral(
+        "sleep 0.8; "
+        "for i in 1 2 3 4 5 6 7 8 9 10; do "
+        "for id in $(/usr/bin/xdotool search --class uos-ai-assistant 2>/dev/null); do "
+        "eval $(/usr/bin/xdotool getwindowgeometry --shell \"$id\" 2>/dev/null); "
+        "if [ ${WIDTH:-0} -gt 100 ] && [ ${HEIGHT:-0} -gt 100 ]; then "
+        "/usr/bin/xdotool windowraise \"$id\" 2>/dev/null; "
+        "/usr/bin/xdotool windowactivate \"$id\" 2>/dev/null; "
+        "/usr/bin/xdotool windowfocus \"$id\" 2>/dev/null; "
+        "exit 0; "
+        "fi; "
+        "done; "
+        "sleep 0.2; "
+        "done");
+    QProcess::startDetached(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), activateScript});
+}
+
 QString TodoApp::sendPromptToUosAi(const QString &prompt) const
 {
     const QString truncated = prompt.size() > MaxPromptLength
         ? prompt.left(MaxPromptLength) + QStringLiteral("\n\n（内容较多，已自动截断，请基于以上内容总结。）")
         : prompt;
 
-    QProcess process;
-    process.start(QStringLiteral("dbus-send"), {
-        QStringLiteral("--session"),
-        QStringLiteral("--dest=com.deepin.copilot"),
-        QStringLiteral("--print-reply"),
-        QStringLiteral("/org/deepin/copilot/chat"),
-        QStringLiteral("org.deepin.copilot.chat.dockInputPrompt"),
-        QStringLiteral("string:%1").arg(truncated)
-    });
-    if (!process.waitForFinished(10000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    const auto sendPrompt = [&truncated]() {
+        QProcess process;
+        process.start(QStringLiteral("dbus-send"), {
+            QStringLiteral("--session"),
+            QStringLiteral("--dest=com.deepin.copilot"),
+            QStringLiteral("--print-reply"),
+            QStringLiteral("/org/deepin/copilot/chat"),
+            QStringLiteral("org.deepin.copilot.chat.dockInputPrompt"),
+            QStringLiteral("string:%1").arg(truncated)
+        });
+        return process.waitForFinished(10000)
+            && process.exitStatus() == QProcess::NormalExit
+            && process.exitCode() == 0;
+    };
+
+    bool sent = sendPrompt();
+    if (!sent) {
+        showUosAiAssistant();
+        sent = sendPrompt();
+    }
+    if (!sent) {
         return QStringLiteral("发送到 UOS AI 助手失败，请确认 UOS AI 已启动");
     }
+    showUosAiAssistant();
     return QStringLiteral("已发送到 UOS AI 助手");
 }
 
