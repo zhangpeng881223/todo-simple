@@ -212,6 +212,7 @@ def build_metrics(records, target_day):
                 error_count += 1
             if event_name in {
                 "note_window_layer_changed",
+                "note_ai_summary_clicked",
                 "desktop_ai_summary_clicked",
                 "calendar_sync",
                 "ai_summary_week",
@@ -256,6 +257,7 @@ def build_metrics(records, target_day):
         "层级-normal": layer_counts["normal"],
         "层级-bottom": layer_counts["bottom"],
         "层级-top": layer_counts["top"],
+        "主窗口AI总结": core_feature_counts["note_ai_summary_clicked"],
         "桌面AI总结": core_feature_counts["desktop_ai_summary_clicked"],
         "同步到日历": core_feature_counts["calendar_sync"],
         "总结本周": core_feature_counts["ai_summary_week"],

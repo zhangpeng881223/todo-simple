@@ -74,6 +74,7 @@ bool isCoreTelemetryEvent(const QString &eventName, const QString &eventType)
         QStringLiteral("app_exit"),
         QStringLiteral("session_heartbeat"),
         QStringLiteral("feedback_submitted"),
+        QStringLiteral("note_ai_summary_clicked"),
         QStringLiteral("desktop_ai_summary_clicked"),
         QStringLiteral("calendar_sync"),
         QStringLiteral("ai_summary_week"),

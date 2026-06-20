@@ -13,6 +13,7 @@ APP_ID = os.environ.get("FEISHU_APP_ID", "")
 APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
 BASE_TOKEN = os.environ.get("FEISHU_BASE_TOKEN", "")
 TELEMETRY_TABLE_ID = os.environ.get("FEISHU_TELEMETRY_TABLE_ID", "")
+FEEDBACK_TABLE_ID = os.environ.get("FEISHU_FEEDBACK_TABLE_ID", "")
 HOST = os.environ.get("TELEMETRY_HOST", "0.0.0.0")
 PORT = int(os.environ.get("TELEMETRY_PORT", "18080"))
 MAX_EVENTS_PER_REQUEST = 50
@@ -31,6 +32,7 @@ CORE_EVENT_NAMES = {
     "app_exit",
     "session_heartbeat",
     "feedback_submitted",
+    "note_ai_summary_clicked",
     "desktop_ai_summary_clicked",
     "calendar_sync",
     "ai_summary_week",
@@ -38,8 +40,32 @@ CORE_EVENT_NAMES = {
     "note_window_layer_changed",
 }
 
+EVENT_NAME_LABELS = {
+    "app_start": "应用启动",
+    "app_exit": "应用退出",
+    "session_heartbeat": "使用心跳",
+    "feedback_submitted": "用户反馈",
+    "note_ai_summary_clicked": "主窗口AI总结",
+    "desktop_ai_summary_clicked": "桌面待办AI总结",
+    "calendar_sync": "同步到日历",
+    "ai_summary_week": "总结本周",
+    "ai_summary_month": "总结本月",
+    "note_window_layer_changed": "桌面待办层级切换",
+}
+
+MODULE_LABELS = {
+    "app": "应用",
+    "feedback": "用户反馈",
+    "summary": "AI总结",
+    "calendar": "日历同步",
+    "desktop_note": "桌面待办",
+    "main_window": "主窗口",
+    "settings": "设置",
+}
+
 _tenant_token = ""
 _tenant_token_expire_at = 0
+_feedback_table_id = ""
 
 
 def log(*parts):
@@ -83,6 +109,27 @@ def post_json(url, payload, headers=None):
         return error.code, data
 
 
+def get_json(url, headers=None):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            **(headers or {}),
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as error:
+        text = error.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = {"raw": text}
+        return error.code, data
+
+
 def tenant_access_token():
     global _tenant_token, _tenant_token_expire_at
     now = int(time.time())
@@ -98,6 +145,32 @@ def tenant_access_token():
     _tenant_token = data["tenant_access_token"]
     _tenant_token_expire_at = now + int(data.get("expire", 7200))
     return _tenant_token
+
+
+def feishu_headers():
+    return {"Authorization": f"Bearer {tenant_access_token()}"}
+
+
+def feedback_table_id():
+    global _feedback_table_id
+    if _feedback_table_id:
+        return _feedback_table_id
+    if FEEDBACK_TABLE_ID:
+        _feedback_table_id = FEEDBACK_TABLE_ID
+        return _feedback_table_id
+
+    url = (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+        f"{BASE_TOKEN}/tables?page_size=100"
+    )
+    status, data = get_json(url, feishu_headers())
+    if status != 200 or data.get("code") != 0:
+        raise RuntimeError(f"failed to list tables: status={status} body={data}")
+    for item in data.get("data", {}).get("items", []):
+        if item.get("name") == "用户反馈管理":
+            _feedback_table_id = item.get("table_id", "")
+            return _feedback_table_id
+    return ""
 
 
 def parse_event_time(value):
@@ -122,26 +195,103 @@ def sanitize_string(value, max_len=500):
     return text[:max_len]
 
 
+def event_name_label(event_name):
+    return EVENT_NAME_LABELS.get(event_name, event_name)
+
+
+def module_label(module):
+    return MODULE_LABELS.get(module, module)
+
+
 def event_to_fields(event):
     properties = event.get("properties")
     if not isinstance(properties, dict):
         properties = {}
+    else:
+        properties = dict(properties)
+    raw_event_name = sanitize_string(event.get("eventName"), 120)
+    if raw_event_name and "eventNameRaw" not in properties:
+        properties["eventNameRaw"] = raw_event_name
     event_type = sanitize_string(event.get("eventType"), 120)
     if event_type not in ALLOWED_EVENT_TYPES:
         event_type = "功能点击"
+    module = sanitize_string(event.get("module"), 120)
     return {
-        "事件名称": sanitize_string(event.get("eventName"), 120),
+        "事件名称": sanitize_string(event_name_label(raw_event_name), 120),
         "事件类型": event_type,
         "发生时间": parse_event_time(event.get("eventTime")),
         "匿名设备ID": sanitize_string(event.get("anonymousDeviceId"), 120),
         "会话ID": sanitize_string(event.get("sessionId"), 120),
         "应用版本": sanitize_string(event.get("appVersion"), 80),
         "系统版本": sanitize_string(event.get("systemVersion"), 160),
-        "页面/模块": sanitize_string(event.get("module"), 120),
+        "页面/模块": sanitize_string(module_label(module), 120),
         "停留时长秒": float(event.get("durationSeconds") or 0),
         "事件属性JSON": json.dumps(properties, ensure_ascii=False, separators=(",", ":"))[:5000],
         "来源": sanitize_string(event.get("source") or "小U待办", 80),
     }
+
+
+def feedback_type_from_content(content):
+    text = content.lower()
+    if any(word in text for word in ("bug", "崩溃", "闪退", "错误", "无法", "不能")):
+        return "Bug"
+    if any(word in text for word in ("希望", "增加", "新增", "功能", "需求", "想要")):
+        return "需求"
+    if any(word in text for word in ("建议", "优化", "改进")):
+        return "建议"
+    return "其它"
+
+
+def feedback_title(content):
+    first_line = content.strip().splitlines()[0] if content.strip() else "用户反馈"
+    first_line = first_line.strip()
+    if len(first_line) > 36:
+        return first_line[:36] + "..."
+    return first_line or "用户反馈"
+
+
+def feedback_event_to_fields(event):
+    properties = event.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+    content = sanitize_string(properties.get("content"), 5000).strip()
+    contact = sanitize_string(properties.get("contact"), 300).strip()
+    return {
+        "标题": feedback_title(content),
+        "状态": "新提交",
+        "创建时间": parse_event_time(event.get("eventTime")),
+        "反馈类型": feedback_type_from_content(content),
+        "描述": content,
+        "联系方式": contact,
+        "系统版本": sanitize_string(event.get("systemVersion"), 160),
+        "应用版本": sanitize_string(event.get("appVersion"), 80),
+        "匿名设备ID": sanitize_string(event.get("anonymousDeviceId"), 120),
+        "来源": sanitize_string(event.get("source") or "小U待办", 80),
+    }
+
+
+def write_feedback_events(events):
+    feedback_events = [
+        event for event in events[:MAX_EVENTS_PER_REQUEST]
+        if sanitize_string(event.get("eventName"), 120) == "feedback_submitted"
+        or sanitize_string(event.get("eventType"), 120) == "反馈提交"
+    ]
+    if not feedback_events:
+        return {"feedback_created": 0}
+
+    table_id = feedback_table_id()
+    if not table_id:
+        raise RuntimeError("failed to find 用户反馈管理 table")
+
+    records = [{"fields": feedback_event_to_fields(event)} for event in feedback_events]
+    url = (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+        f"{BASE_TOKEN}/tables/{table_id}/records/batch_create"
+    )
+    status, data = post_json(url, {"records": records}, feishu_headers())
+    if status != 200 or data.get("code") != 0:
+        raise RuntimeError(f"failed to write feedback: status={status} body={data}")
+    return {"feedback_created": len(records), "feedback_records": data.get("data", {}).get("records", [])}
 
 
 def should_store_event(event):
@@ -154,23 +304,23 @@ def should_store_event(event):
 
 
 def write_telemetry_events(events):
+    feedback_result = write_feedback_events(events)
     records = [
         {"fields": event_to_fields(event)}
         for event in events[:MAX_EVENTS_PER_REQUEST]
         if should_store_event(event)
     ]
     if not records:
-        return {"created": 0}
+        return {"created": 0, **feedback_result}
 
-    token = tenant_access_token()
     url = (
         "https://open.feishu.cn/open-apis/bitable/v1/apps/"
         f"{BASE_TOKEN}/tables/{TELEMETRY_TABLE_ID}/records/batch_create"
     )
-    status, data = post_json(url, {"records": records}, {"Authorization": f"Bearer {token}"})
+    status, data = post_json(url, {"records": records}, feishu_headers())
     if status != 200 or data.get("code") != 0:
         raise RuntimeError(f"failed to write telemetry: status={status} body={data}")
-    return {"created": len(records), "records": data.get("data", {}).get("records", [])}
+    return {"created": len(records), "records": data.get("data", {}).get("records", []), **feedback_result}
 
 
 class Handler(BaseHTTPRequestHandler):
