@@ -161,8 +161,7 @@ Item {
                     NavButton { text: "桌面待办"; index: 1; iconName: "desktop-todo" }
                     NavButton { text: "AI总结"; index: 2; iconName: "ai-summary" }
                     NavButton { text: "数据存储"; index: 3; iconName: "data-storage" }
-                    NavButton { text: "隐私说明"; index: 4; iconName: "privacy" }
-                    NavButton { text: "彩蛋"; index: 5; iconName: "easter-egg" }
+                    NavButton { text: "彩蛋"; index: 4; iconName: "easter-egg" }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -226,7 +225,6 @@ Item {
                         DesktopTodoStylePage {}
                         AiSummaryPage {}
                         DataStoragePage {}
-                        PrivacyPage {}
                         EasterEggPage {}
                     }
                 }
@@ -1143,62 +1141,6 @@ Item {
         }
     }
 
-    component PrivacyPage: PageShell {
-        PageTitle {
-            title: "隐私说明"
-            desc: "说明小U待办如何处理匿名使用数据和用户主动提交的反馈。"
-        }
-
-        SectionBlock {
-            title: "匿名使用数据"
-            desc: "用于判断功能是否稳定、了解功能使用情况，并改进产品体验。"
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 10
-
-                PrivacyText {
-                    text: "会上传匿名埋点事件，例如应用启动、页面打开、功能点击、会话时长、应用版本、系统版本和数量类统计。"
-                }
-
-                PrivacyText {
-                    text: "匿名埋点不会上传姓名、手机号、联系方式、待办标题、待办正文、反馈内容等个人内容。"
-                }
-
-                PrivacyText {
-                    text: "匿名设备ID仅用于区分设备维度的活跃统计，不用于识别真实身份。"
-                }
-            }
-        }
-
-        SectionBlock {
-            title: "用户反馈"
-            desc: "反馈是用户主动提交的信息，和匿名埋点是两条独立链路。"
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 10
-
-                PrivacyText {
-                    text: "当你主动提交反馈时，反馈内容用于定位问题或整理需求。"
-                }
-
-                PrivacyText {
-                    text: "联系方式为选填，仅在需要进一步沟通问题时使用；不填写也可以提交反馈。"
-                }
-            }
-        }
-
-        SectionBlock {
-            title: "数据用途"
-            desc: "所有数据只用于产品改进、稳定性分析、问题排查和基础运营统计。"
-
-            PrivacyText {
-                text: "小U待办不会把匿名使用数据和用户反馈联系方式混合用于身份识别。"
-            }
-        }
-    }
-
     component EasterEggPage: Item {
         ColumnLayout {
             anchors.centerIn: parent
@@ -1253,31 +1195,6 @@ Item {
                 font.pixelSize: 13
                 horizontalAlignment: Text.AlignHCenter
             }
-        }
-    }
-
-    component PrivacyText: RowLayout {
-        id: privacyText
-        property string text: ""
-        Layout.fillWidth: true
-        spacing: 8
-
-        Rectangle {
-            Layout.preferredWidth: 5
-            Layout.preferredHeight: 5
-            Layout.alignment: Qt.AlignTop
-            Layout.topMargin: 7
-            radius: 2.5
-            color: root.accentColor
-        }
-
-        D.Label {
-            Layout.fillWidth: true
-            text: privacyText.text
-            color: root.textColor
-            font.pixelSize: 13
-            lineHeight: 1.18
-            wrapMode: Text.WordWrap
         }
     }
 }
