@@ -123,6 +123,7 @@ public:
     Q_INVOKABLE void deleteEvent(const QString &eventId);
     Q_INVOKABLE QVariantMap cursorPosition() const;
     Q_INVOKABLE void refreshWallpaper();
+    Q_INVOKABLE void resetMainWindowAppearanceDefaults();
 
 signals:
     void notesChanged();
@@ -165,6 +166,10 @@ private:
     QVariantList buildPowderParticles(const QPixmap &snapshot, const QRect &windowGeometry) const;
     void showEffectOverlay(const QString &mode, const QVariantList &particles = QVariantList(), bool restoreListWindowOnClose = false);
     QUrl readSystemWallpaperSource() const;
+    double analyzeWallpaperBrightness(const QUrl &source) const;
+    double recommendedMainWindowOpacityForWallpaper(const QUrl &source) const;
+    bool shouldAutoUpdateMainWindowOpacity() const;
+    bool applyAutomaticMainWindowOpacity(const QUrl &source);
     QUrl readDdeAppearanceWallpaperSource() const;
     QUrl cachedWallpaperSource(const QUrl &source, const QRect &screenGeometry) const;
     void updateWallpaperWatchPaths(const QUrl &source);

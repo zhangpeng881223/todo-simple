@@ -2,8 +2,8 @@
 Type=Application
 Name=小U待办
 Comment=Deepin/UOS todo notes
-Exec=todo260606
-Icon=todo260606
+Exec=xiaou-todo
+Icon=xiaou-todo
 Terminal=false
 Categories=Utility;
 StartupNotify=true

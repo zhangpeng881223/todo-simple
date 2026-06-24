@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(todo260606 VERSION 1.0.0 LANGUAGES CXX)
+project(xiaou-todo VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Gui Network Qui
 find_package(Dtk6Gui REQUIRED)
 find_package(Dtk6Widget REQUIRED)
 
-add_executable(todo260606
+add_executable(xiaou-todo
     # Calendar/event editor is parked for the current version.
     # src/EventEditorController.cpp
     # src/EventEditorController.h
@@ -28,7 +28,7 @@ add_executable(todo260606
     qml/qml.qrc
 )
 
-target_link_libraries(todo260606
+target_link_libraries(xiaou-todo
     PRIVATE
         Qt${QT_VERSION_MAJOR}::Core
         Qt${QT_VERSION_MAJOR}::DBus
@@ -41,9 +41,9 @@ target_link_libraries(todo260606
         Dtk6::Widget
 )
 
-install(TARGETS todo260606 RUNTIME DESTINATION bin)
-install(FILES todo260606.desktop DESTINATION share/applications)
+install(TARGETS xiaou-todo RUNTIME DESTINATION bin)
+install(FILES xiaou-todo.desktop DESTINATION share/applications)
 install(FILES qml/assets/xiaou-todo-app-icon.png
     DESTINATION share/icons/hicolor/128x128/apps
-    RENAME todo260606.png
+    RENAME xiaou-todo.png
 )

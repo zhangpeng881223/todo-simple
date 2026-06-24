@@ -11,6 +11,8 @@ Item {
 
     readonly property var hostWindow: Window.window
     readonly property bool lightTheme: app.theme === "light"
+                                       || (app.theme === "system"
+                                           && D.ApplicationHelper.themeType === D.ApplicationHelper.LightType)
     readonly property color windowColor: lightTheme ? "#f7f8fa" : "#202124"
     readonly property color sidebarPanelColor: lightTheme ? "#ffffff" : "#2b2c2f"
     readonly property color contentPanelColor: lightTheme ? "#f7f8fa" : "#202124"
@@ -40,12 +42,6 @@ Item {
         console.log(text)
     }
 
-    function syncDtkPalette() {
-        if (D.ApplicationHelper && D.ApplicationHelper.setPaletteType) {
-            D.ApplicationHelper.setPaletteType(root.lightTheme ? D.ApplicationHelper.LightType : D.ApplicationHelper.DarkType)
-        }
-    }
-
     function formatAlpha(value) {
         return Number(value).toFixed(3)
     }
@@ -55,19 +51,7 @@ Item {
     }
 
     function resetMainWindowAlpha() {
-        if (!root.lightTheme) {
-            app.updateSetting("mainWindowOpacity", 0.37)
-            app.updateSetting("mainRightPanelOpacity", 0.26)
-            app.updateSetting("mainWallpaperBlur", 0.7)
-        } else if (app.mainWallpaperMode === "default") {
-            app.updateSetting("mainWindowOpacity", 0.405)
-            app.updateSetting("mainRightPanelOpacity", 0.7)
-            app.updateSetting("mainWallpaperBlur", 0.75)
-        } else {
-            app.updateSetting("mainWindowOpacity", 0.3)
-            app.updateSetting("mainRightPanelOpacity", 0.8)
-            app.updateSetting("mainWallpaperBlur", 0.3)
-        }
+        app.resetMainWindowAppearanceDefaults()
         app.updateSetting("mainDefaultTodoAlphaLight", 0.445)
         app.updateSetting("mainPriorityTodoAlphaLight", 0.275)
         app.updateSetting("mainDefaultTodoAlphaDark", 0.13)
@@ -99,7 +83,6 @@ Item {
 
     Component.onCompleted: {
         syncedTheme = app.theme
-        syncDtkPalette()
         loadAiTemplate("note")
     }
 
@@ -108,7 +91,6 @@ Item {
         function onSettingsChanged() {
             if (root.syncedTheme !== app.theme) {
                 root.syncedTheme = app.theme
-                root.syncDtkPalette()
             }
             if (!root.aiDirty) {
                 root.loadAiTemplate(root.aiScope)

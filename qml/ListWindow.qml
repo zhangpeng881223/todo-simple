@@ -47,7 +47,9 @@ D.ApplicationWindow {
     readonly property color lineColor: lightTheme ? Qt.rgba(0, 0, 0, 0.085) : Qt.rgba(1, 1, 1, 0.105)
     readonly property color textColor: lightTheme ? "#252525" : "#f3f4f4"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.56) : "#9aa2a6"
+    readonly property color sidebarMutedColor: lightTheme ? root.mutedColor : "#cfd4d8"
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.34) : "#6f777b"
+    readonly property color sidebarWeakColor: lightTheme ? root.weakColor : "#b8c0c5"
     readonly property color placeholderColor: lightTheme ? root.weakColor : "#a8b0b5"
     readonly property color selectedColor: lightTheme ? Qt.rgba(255 / 255, 196 / 255, 48 / 255, 0.36) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.26)
     readonly property color selectedBorderColor: lightTheme ? Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.28) : Qt.rgba(255 / 255, 181 / 255, 32 / 255, 0.24)
@@ -88,7 +90,6 @@ D.ApplicationWindow {
     property int pendingDragTargetIndex: -1
     property real pendingDragContentY: 0
     property bool committingTodoMove: false
-    property bool applyingAppTheme: false
     property real defaultTodoAlphaLight: app.mainDefaultTodoAlphaLight
     property real defaultTodoAlphaDark: app.mainDefaultTodoAlphaDark
     property real priorityTodoAlphaLight: app.mainPriorityTodoAlphaLight
@@ -122,32 +123,9 @@ D.ApplicationWindow {
         }
     }
 
-    function syncDtkPalette() {
-        if (D.ApplicationHelper && D.ApplicationHelper.setPaletteType) {
-            applyingAppTheme = true
-            D.ApplicationHelper.setPaletteType(root.dtkThemeType())
-            Qt.callLater(function() { applyingAppTheme = false })
-        }
-    }
-
     function dtkThemeType() {
         if (app.theme === "system") return D.ApplicationHelper.UnknownType
         return root.lightTheme ? D.ApplicationHelper.LightType : D.ApplicationHelper.DarkType
-    }
-
-    function syncAppThemeFromDtkPalette(paletteType) {
-        if (applyingAppTheme) return
-        var nextTheme = ""
-        if (paletteType === D.ApplicationHelper.UnknownType) {
-            nextTheme = "system"
-        } else if (paletteType === D.ApplicationHelper.LightType) {
-            nextTheme = "light"
-        } else if (paletteType === D.ApplicationHelper.DarkType) {
-            nextTheme = "dark"
-        }
-        if (nextTheme.length > 0 && app.theme !== nextTheme) {
-            app.updateSetting("theme", nextTheme)
-        }
     }
 
     function priorityColor(priority) {
@@ -494,14 +472,12 @@ D.ApplicationWindow {
     }
 
     Component.onCompleted: {
-        syncDtkPalette()
         ensureSelection()
         syncDetailTodos(true)
     }
 
     Connections {
         target: app
-        function onSettingsChanged() { root.syncDtkPalette() }
         function onFeedbackDialogRequested() { feedbackDialog.open() }
         function onNotesChanged() {
             root.ensureSelection()
@@ -513,13 +489,6 @@ D.ApplicationWindow {
 
     ListModel {
         id: detailTodosModel
-    }
-
-    Connections {
-        target: D.ApplicationHelper
-        function onPaletteTypeChanged(paletteType) {
-            root.syncAppThemeFromDtkPalette(paletteType)
-        }
     }
 
     D.TitleBar {
@@ -763,7 +732,7 @@ D.ApplicationWindow {
                                     height: 28
                                     text: root.searchTerm
                                     placeholderText: "搜索"
-                                    placeholderTextColor: root.placeholderColor
+                                    placeholderTextColor: root.sidebarMutedColor
                                     color: root.textColor
                                     selectByMouse: true
                                     font.pixelSize: 13
@@ -785,7 +754,7 @@ D.ApplicationWindow {
 
                             D.Label {
                                 text: "全部待办（" + root.matchedCount() + "）"
-                                color: root.mutedColor
+                                color: root.sidebarMutedColor
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
                             }
@@ -1014,7 +983,7 @@ D.ApplicationWindow {
 
                                                 D.Label {
                                                     text: modelData.dateText || ""
-                                                    color: root.mutedColor
+                                                    color: root.sidebarMutedColor
                                                     font.pixelSize: 12
                                                     font.weight: Font.Medium
                                                 }
@@ -1029,7 +998,7 @@ D.ApplicationWindow {
                                                     Layout.fillWidth: true
                                                     text: root.highlightSearchText(root.sidebarPreviewText(modelData))
                                                     textFormat: Text.RichText
-                                                    color: root.mutedColor
+                                                    color: root.sidebarMutedColor
                                                     font.pixelSize: 12
                                                     font.weight: Font.Medium
                                                     elide: Text.ElideRight
@@ -1060,7 +1029,7 @@ D.ApplicationWindow {
                                                         D.Label {
                                                             anchors.verticalCenter: parent.verticalCenter
                                                             text: noteRow.confirmingDelete ? "确认删除" : "删除"
-                                                            color: root.mutedColor
+                                                            color: root.sidebarMutedColor
                                                             font.pixelSize: 12
                                                             font.weight: Font.DemiBold
                                                         }
@@ -1090,7 +1059,7 @@ D.ApplicationWindow {
                                                         anchors.verticalCenter: parent.verticalCenter
                                                         visible: !noteRow.hovered && !noteRow.confirmingDelete
                                                         text: modelData.completed + "/" + modelData.total
-                                                        color: root.mutedColor
+                                                        color: root.sidebarMutedColor
                                                         font.pixelSize: 12
                                                         font.weight: Font.DemiBold
                                                     }
@@ -1139,7 +1108,7 @@ D.ApplicationWindow {
                                     height: root.matchedCount() === 0 ? 120 : 0
                                     visible: root.matchedCount() === 0
                                     text: "暂无匹配的待办窗口"
-                                    color: root.mutedColor
+                                    color: root.sidebarMutedColor
                                     font.pixelSize: 13
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter

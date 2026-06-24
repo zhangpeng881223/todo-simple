@@ -61,11 +61,15 @@ constexpr double DefaultWallpaperBlur = 0.75;
 constexpr double SystemWallpaperWindowOpacity = 0.30;
 constexpr double SystemWallpaperRightPanelOpacity = 0.80;
 constexpr double SystemWallpaperBlur = 0.30;
-constexpr double DarkThemeWindowOpacity = 0.37;
+constexpr double DarkDefaultWallpaperWindowOpacity = 0.40;
+constexpr double DarkThemeWindowOpacity = 0.70;
+constexpr double BrightWallpaperWindowOpacity = 0.70;
+constexpr double DarkWallpaperWindowOpacity = 0.40;
+constexpr double WallpaperBrightnessThreshold = 0.55;
 constexpr double DarkThemeRightPanelOpacity = 0.26;
 constexpr double DarkThemeWallpaperBlur = 0.70;
-constexpr int DarkThemeMainAppearanceVersion = 1;
-constexpr int TelemetryHeartbeatIntervalMs = 5 * 60 * 1000;
+constexpr int DarkThemeMainAppearanceVersion = 3;
+constexpr int TelemetryHeartbeatIntervalMs = 10 * 60 * 1000;
 
 bool isCoreTelemetryEvent(const QString &eventName, const QString &eventType)
 {
@@ -335,8 +339,8 @@ TodoApp::TodoApp(QObject *parent)
         refreshWallpaper();
     });
 
-    m_settings.insert(QStringLiteral("theme"), QStringLiteral("dark"));
-    m_settings.insert(QStringLiteral("noteTheme"), QStringLiteral("dark"));
+    m_settings.insert(QStringLiteral("theme"), QStringLiteral("system"));
+    m_settings.insert(QStringLiteral("noteTheme"), QStringLiteral("system"));
     m_settings.insert(QStringLiteral("priorityStyle"), QStringLiteral("colorful"));
     m_settings.insert(QStringLiteral("todosWrapEnabled"), false);
     m_settings.insert(QStringLiteral("opacity"), 60);
@@ -346,9 +350,10 @@ TodoApp::TodoApp(QObject *parent)
     m_settings.insert(QStringLiteral("mainDefaultTodoAlphaDark"), 0.13);
     m_settings.insert(QStringLiteral("mainPriorityTodoAlphaDark"), 0.21);
     m_settings.insert(QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity);
+    m_settings.insert(QStringLiteral("mainWindowOpacityUserOverridden"), false);
     m_settings.insert(QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity);
     m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
-    m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("system"));
+    m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("default"));
     m_settings.insert(QStringLiteral("mainCustomWallpaperPath"), QString());
     m_settings.insert(QStringLiteral("telemetryEnabled"), true);
     m_settings.insert(QStringLiteral("telemetryEndpoint"), QStringLiteral("http://8.145.43.232/api/telemetry/batch"));
@@ -532,8 +537,8 @@ QVariantList TodoApp::eventsList() const
     return list;
 }
 
-QString TodoApp::theme() const { return m_settings.value(QStringLiteral("theme")).toString(QStringLiteral("dark")); }
-QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("noteTheme")).toString(QStringLiteral("dark")); }
+QString TodoApp::theme() const { return m_settings.value(QStringLiteral("theme")).toString(QStringLiteral("system")); }
+QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("noteTheme")).toString(QStringLiteral("system")); }
 QString TodoApp::priorityStyle() const { return m_settings.value(QStringLiteral("priorityStyle")).toString(QStringLiteral("colorful")); }
 bool TodoApp::todosWrapEnabled() const { return m_settings.value(QStringLiteral("todosWrapEnabled")).toBool(false); }
 int TodoApp::opacity() const { return m_settings.value(QStringLiteral("opacity")).toInt(60); }
@@ -545,7 +550,7 @@ double TodoApp::mainPriorityTodoAlphaDark() const { return numberSetting(m_setti
 double TodoApp::mainWindowOpacity() const { return numberSetting(m_settings, QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity); }
 double TodoApp::mainRightPanelOpacity() const { return numberSetting(m_settings, QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity); }
 double TodoApp::mainWallpaperBlur() const { return numberSetting(m_settings, QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur); }
-QString TodoApp::mainWallpaperMode() const { return m_settings.value(QStringLiteral("mainWallpaperMode")).toString(QStringLiteral("system")); }
+QString TodoApp::mainWallpaperMode() const { return m_settings.value(QStringLiteral("mainWallpaperMode")).toString(QStringLiteral("default")); }
 double TodoApp::backdropProtection() const { return m_backdropProtection; }
 QUrl TodoApp::wallpaperSource() const { return m_wallpaperSource; }
 QRect TodoApp::wallpaperScreenGeometry() const { return m_wallpaperScreenGeometry; }
@@ -568,54 +573,129 @@ void TodoApp::syncDtkPalette()
 
 void TodoApp::applyMainWindowAppearanceDefaults()
 {
+    const QString wallpaperMode = mainWallpaperMode();
+    const bool userOverridden = m_settings.value(QStringLiteral("mainWindowOpacityUserOverridden")).toBool(false);
+
     if (theme() == QStringLiteral("dark")) {
-        m_settings.insert(QStringLiteral("mainWindowOpacity"), DarkThemeWindowOpacity);
+        if (!userOverridden) {
+            const double windowOpacity = wallpaperMode == QStringLiteral("default")
+                ? DarkDefaultWallpaperWindowOpacity
+                : recommendedMainWindowOpacityForWallpaper(readSystemWallpaperSource());
+            m_settings.insert(QStringLiteral("mainWindowOpacity"), windowOpacity);
+        }
         m_settings.insert(QStringLiteral("mainRightPanelOpacity"), DarkThemeRightPanelOpacity);
         m_settings.insert(QStringLiteral("mainWallpaperBlur"), DarkThemeWallpaperBlur);
         m_settings.insert(QStringLiteral("darkThemeMainAppearanceVersion"), DarkThemeMainAppearanceVersion);
         return;
     }
 
-    if (mainWallpaperMode() == QStringLiteral("default")) {
-        m_settings.insert(QStringLiteral("mainWindowOpacity"), DefaultWallpaperWindowOpacity);
+    if (!userOverridden) {
+        const double windowOpacity = wallpaperMode == QStringLiteral("default")
+            ? DefaultWallpaperWindowOpacity
+            : recommendedMainWindowOpacityForWallpaper(readSystemWallpaperSource());
+        m_settings.insert(QStringLiteral("mainWindowOpacity"), windowOpacity);
+    }
+
+    if (wallpaperMode == QStringLiteral("default")) {
         m_settings.insert(QStringLiteral("mainRightPanelOpacity"), DefaultWallpaperRightPanelOpacity);
         m_settings.insert(QStringLiteral("mainWallpaperBlur"), DefaultWallpaperBlur);
         return;
     }
 
-    m_settings.insert(QStringLiteral("mainWindowOpacity"), SystemWallpaperWindowOpacity);
     m_settings.insert(QStringLiteral("mainRightPanelOpacity"), SystemWallpaperRightPanelOpacity);
     m_settings.insert(QStringLiteral("mainWallpaperBlur"), SystemWallpaperBlur);
 }
 
+double TodoApp::analyzeWallpaperBrightness(const QUrl &source) const
+{
+    if (!source.isLocalFile()) {
+        return -1.0;
+    }
+
+    const QString path = source.toLocalFile();
+    if (!QFileInfo::exists(path)) {
+        return -1.0;
+    }
+
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const QSize originalSize = reader.size();
+    if (originalSize.isValid()) {
+        QSize sampleSize = originalSize;
+        sampleSize.scale(QSize(64, 64), Qt::KeepAspectRatio);
+        reader.setScaledSize(sampleSize);
+    }
+
+    const QImage image = reader.read().convertToFormat(QImage::Format_ARGB32);
+    if (image.isNull()) {
+        qWarning() << "Failed to analyze wallpaper brightness:" << path << reader.errorString();
+        return -1.0;
+    }
+
+    double luminanceSum = 0.0;
+    int sampleCount = 0;
+    for (int y = 0; y < image.height(); ++y) {
+        const QRgb *line = reinterpret_cast<const QRgb *>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            const QColor color = QColor::fromRgba(line[x]);
+            if (color.alpha() < 16) {
+                continue;
+            }
+            luminanceSum += (0.2126 * color.redF()) + (0.7152 * color.greenF()) + (0.0722 * color.blueF());
+            ++sampleCount;
+        }
+    }
+
+    if (sampleCount == 0) {
+        return -1.0;
+    }
+    return luminanceSum / sampleCount;
+}
+
+double TodoApp::recommendedMainWindowOpacityForWallpaper(const QUrl &source) const
+{
+    const double brightness = analyzeWallpaperBrightness(source);
+    if (brightness < 0.0) {
+        return theme() == QStringLiteral("dark") ? DarkThemeWindowOpacity : SystemWallpaperWindowOpacity;
+    }
+    return brightness >= WallpaperBrightnessThreshold ? BrightWallpaperWindowOpacity : DarkWallpaperWindowOpacity;
+}
+
+bool TodoApp::shouldAutoUpdateMainWindowOpacity() const
+{
+    const QString mode = mainWallpaperMode();
+    return (mode == QStringLiteral("system") || mode == QStringLiteral("custom"))
+        && !m_settings.value(QStringLiteral("mainWindowOpacityUserOverridden")).toBool(false);
+}
+
+bool TodoApp::applyAutomaticMainWindowOpacity(const QUrl &source)
+{
+    if (!shouldAutoUpdateMainWindowOpacity()) {
+        return false;
+    }
+
+    const double recommendedOpacity = recommendedMainWindowOpacityForWallpaper(source);
+    if (std::abs(mainWindowOpacity() - recommendedOpacity) < 0.0005) {
+        return false;
+    }
+
+    m_settings.insert(QStringLiteral("mainWindowOpacity"), recommendedOpacity);
+    return true;
+}
+
 void TodoApp::syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType)
 {
+    Q_UNUSED(paletteType)
     if (m_syncingDtkPalette) {
         return;
     }
 
-    QString nextTheme;
-    switch (paletteType) {
-    case Dtk::Gui::DGuiApplicationHelper::UnknownType:
-        nextTheme = QStringLiteral("system");
-        break;
-    case Dtk::Gui::DGuiApplicationHelper::LightType:
-        nextTheme = QStringLiteral("light");
-        break;
-    case Dtk::Gui::DGuiApplicationHelper::DarkType:
-        nextTheme = QStringLiteral("dark");
-        break;
+    // Palette changes can come from the system while the user setting remains
+    // "follow system". Do not persist DTK's effective Light/Dark value back
+    // into settings; otherwise windows can disagree and theme switching loops.
+    if (theme() == QStringLiteral("system")) {
+        emit settingsChanged();
     }
-
-    if (nextTheme.isEmpty() || nextTheme == theme()) {
-        return;
-    }
-
-    m_settings.insert(QStringLiteral("theme"), nextTheme);
-    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
-    applyMainWindowAppearanceDefaults();
-    saveSettings();
-    emit settingsChanged();
 }
 
 QString TodoApp::noteSummaryTemplate() const
@@ -1265,13 +1345,35 @@ void TodoApp::refreshWallpaper()
     updateWallpaperWatchPaths(rawSource);
 
     const QUrl nextSource = cachedWallpaperSource(rawSource, nextGeometry);
+    const bool opacityChanged = applyAutomaticMainWindowOpacity(nextSource);
+    if (opacityChanged) {
+        m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+        saveSettings();
+    }
+
     if (nextSource == m_wallpaperSource && nextGeometry == m_wallpaperScreenGeometry) {
+        if (opacityChanged) {
+            emit settingsChanged();
+        }
         return;
     }
 
     m_wallpaperSource = nextSource;
     m_wallpaperScreenGeometry = nextGeometry;
     emit wallpaperChanged();
+    if (opacityChanged) {
+        emit settingsChanged();
+    }
+}
+
+void TodoApp::resetMainWindowAppearanceDefaults()
+{
+    m_settings.insert(QStringLiteral("mainWindowOpacityUserOverridden"), false);
+    applyMainWindowAppearanceDefaults();
+    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    saveSettings();
+    emit settingsChanged();
+    refreshWallpaper();
 }
 
 QUrl TodoApp::readSystemWallpaperSource() const
@@ -1860,6 +1962,9 @@ void TodoApp::closeWindow(QWindow *window)
 
 void TodoApp::updateSetting(const QString &key, const QVariant &value)
 {
+    if (key == QStringLiteral("mainWindowOpacity")) {
+        m_settings.insert(QStringLiteral("mainWindowOpacityUserOverridden"), true);
+    }
     m_settings.insert(key, QJsonValue::fromVariant(value));
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     if (key == QStringLiteral("theme")) {
@@ -1957,6 +2062,7 @@ void TodoApp::setMainWallpaperMode(const QString &mode)
 {
     const QString nextMode = mode == QStringLiteral("default") ? QStringLiteral("default") : QStringLiteral("system");
     m_settings.insert(QStringLiteral("mainWallpaperMode"), nextMode);
+    m_settings.insert(QStringLiteral("mainWindowOpacityUserOverridden"), false);
     applyMainWindowAppearanceDefaults();
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     saveSettings();
@@ -2001,6 +2107,7 @@ QString TodoApp::chooseMainWindowWallpaper()
 
     m_settings.insert(QStringLiteral("mainWallpaperMode"), QStringLiteral("custom"));
     m_settings.insert(QStringLiteral("mainCustomWallpaperPath"), targetPath);
+    m_settings.insert(QStringLiteral("mainWindowOpacityUserOverridden"), false);
     applyMainWindowAppearanceDefaults();
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     saveSettings();

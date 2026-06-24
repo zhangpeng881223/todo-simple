@@ -32,15 +32,15 @@ int main(int argc, char *argv[])
 #endif
     QApplication::setApplicationName(QStringLiteral("小U待办"));
     QApplication::setApplicationVersion(QStringLiteral("1.0.0"));
-    QApplication::setOrganizationName(QStringLiteral("Todo260606"));
-    QGuiApplication::setDesktopFileName(QStringLiteral("todo260606"));
+    QApplication::setOrganizationName(QStringLiteral("XiaoU"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("xiaou-todo"));
 
     QSurfaceFormat format;
     format.setAlphaBufferSize(8);
     QSurfaceFormat::setDefaultFormat(format);
 
     Dtk::Widget::DApplication app(argc, argv);
-    Dtk::Gui::DWindowManagerHelper::setWmClassName("todo260606");
+    Dtk::Gui::DWindowManagerHelper::setWmClassName("xiaou-todo");
     app.setProductName(QStringLiteral("小U待办"));
     app.setWindowIcon(QIcon(QStringLiteral(":/assets/xiaou-todo-app-icon.png")));
     auto *dtkWidgetTranslator = new QTranslator(&app);

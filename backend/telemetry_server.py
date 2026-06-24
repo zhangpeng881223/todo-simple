@@ -2,11 +2,14 @@
 import json
 import os
 import sys
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from zoneinfo import ZoneInfo
 
 
 APP_ID = os.environ.get("FEISHU_APP_ID", "")
@@ -16,6 +19,10 @@ TELEMETRY_TABLE_ID = os.environ.get("FEISHU_TELEMETRY_TABLE_ID", "")
 FEEDBACK_TABLE_ID = os.environ.get("FEISHU_FEEDBACK_TABLE_ID", "")
 HOST = os.environ.get("TELEMETRY_HOST", "0.0.0.0")
 PORT = int(os.environ.get("TELEMETRY_PORT", "18080"))
+LOCAL_TZ = ZoneInfo(os.environ.get("TELEMETRY_TIMEZONE", "Asia/Shanghai"))
+AGGREGATE_PATH = os.environ.get("TELEMETRY_AGGREGATE_PATH", "/var/lib/xiaou-telemetry/aggregate-state.json")
+AGGREGATE_RETENTION_DAYS = int(os.environ.get("TELEMETRY_AGGREGATE_RETENTION_DAYS", "120"))
+AGGREGATE_MAX_BYTES = int(os.environ.get("TELEMETRY_AGGREGATE_MAX_BYTES", str(50 * 1024 * 1024)))
 MAX_EVENTS_PER_REQUEST = 50
 ALLOWED_EVENT_TYPES = {
     "应用启动",
@@ -66,6 +73,7 @@ MODULE_LABELS = {
 _tenant_token = ""
 _tenant_token_expire_at = 0
 _feedback_table_id = ""
+_aggregate_lock = threading.Lock()
 
 
 def log(*parts):
@@ -184,8 +192,12 @@ def parse_event_time(value):
     except ValueError:
         return int(time.time() * 1000)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=LOCAL_TZ)
     return int(dt.timestamp() * 1000)
+
+
+def local_day_key(ms):
+    return datetime.fromtimestamp(ms / 1000, LOCAL_TZ).date().isoformat()
 
 
 def sanitize_string(value, max_len=500):
@@ -193,6 +205,131 @@ def sanitize_string(value, max_len=500):
         return ""
     text = str(value)
     return text[:max_len]
+
+
+def load_aggregate_state():
+    if not AGGREGATE_PATH:
+        return {"version": 1, "knownDevices": {}, "days": {}}
+    try:
+        with open(AGGREGATE_PATH, "r", encoding="utf-8") as file:
+            state = json.load(file)
+    except FileNotFoundError:
+        return {"version": 1, "knownDevices": {}, "days": {}}
+    except (OSError, json.JSONDecodeError) as exc:
+        log("aggregate load failed, starting fresh:", exc)
+        return {"version": 1, "knownDevices": {}, "days": {}}
+    if not isinstance(state, dict):
+        return {"version": 1, "knownDevices": {}, "days": {}}
+    state.setdefault("version", 1)
+    if not isinstance(state.get("knownDevices"), dict):
+        state["knownDevices"] = {}
+    if not isinstance(state.get("days"), dict):
+        state["days"] = {}
+    return state
+
+
+def prune_aggregate_state(state):
+    days = state.setdefault("days", {})
+    if AGGREGATE_RETENTION_DAYS <= 0:
+        days.clear()
+        return
+    cutoff = (datetime.now(LOCAL_TZ).date() - timedelta(days=AGGREGATE_RETENTION_DAYS - 1)).isoformat()
+    for day in list(days.keys()):
+        if day < cutoff:
+            days.pop(day, None)
+
+
+def save_aggregate_state(state):
+    if not AGGREGATE_PATH:
+        return
+    prune_aggregate_state(state)
+    payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    while len(payload) > AGGREGATE_MAX_BYTES and state.get("days"):
+        oldest_day = min(state["days"])
+        state["days"].pop(oldest_day, None)
+        payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if len(payload) > AGGREGATE_MAX_BYTES:
+        raise RuntimeError(f"aggregate state too large: {len(payload)} bytes")
+
+    directory = os.path.dirname(AGGREGATE_PATH)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".aggregate-", suffix=".json", dir=directory or None)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(payload)
+        os.replace(temp_path, AGGREGATE_PATH)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def day_bucket(state, day_key):
+    days = state.setdefault("days", {})
+    day = days.setdefault(day_key, {})
+    day.setdefault("devices", {})
+    day.setdefault("newDevices", {})
+    day.setdefault("sessions", {})
+    day.setdefault("eventCount", 0)
+    day.setdefault("heartbeatCount", 0)
+    day.setdefault("feedbackCount", 0)
+    day.setdefault("errorCount", 0)
+    day.setdefault("featureCounts", {})
+    day.setdefault("layerCounts", {})
+    return day
+
+
+def increment(mapping, key, amount=1):
+    mapping[key] = int(mapping.get(key, 0)) + amount
+
+
+def update_aggregate_state(events):
+    if not events:
+        return
+    with _aggregate_lock:
+        state = load_aggregate_state()
+        known_devices = state.setdefault("knownDevices", {})
+        for event in events[:MAX_EVENTS_PER_REQUEST]:
+            if not isinstance(event, dict):
+                continue
+            event_ms = parse_event_time(event.get("eventTime"))
+            day = day_bucket(state, local_day_key(event_ms))
+            event_name = sanitize_string(event.get("eventName"), 120)
+            event_type = sanitize_string(event.get("eventType"), 120)
+            device_id = sanitize_string(event.get("anonymousDeviceId"), 120)
+            session_id = sanitize_string(event.get("sessionId"), 120)
+
+            day["eventCount"] = int(day.get("eventCount", 0)) + 1
+            if device_id:
+                day["devices"][device_id] = 1
+                if device_id not in known_devices:
+                    known_devices[device_id] = event_ms
+                    day["newDevices"][device_id] = 1
+                else:
+                    known_devices[device_id] = min(int(known_devices.get(device_id) or event_ms), event_ms)
+
+            if session_id:
+                try:
+                    duration = float(event.get("durationSeconds") or 0)
+                except (TypeError, ValueError):
+                    duration = 0
+                day["sessions"][session_id] = max(float(day["sessions"].get(session_id, 0)), duration)
+
+            if event_type == "心跳" or event_name == "session_heartbeat":
+                day["heartbeatCount"] = int(day.get("heartbeatCount", 0)) + 1
+            if event_type == "反馈提交" or event_name == "feedback_submitted":
+                day["feedbackCount"] = int(day.get("feedbackCount", 0)) + 1
+            if event_type == "错误":
+                day["errorCount"] = int(day.get("errorCount", 0)) + 1
+
+            if event_name in CORE_EVENT_NAMES and event_name != "session_heartbeat":
+                increment(day["featureCounts"], event_name)
+                if event_name == "note_window_layer_changed":
+                    properties = event.get("properties")
+                    if not isinstance(properties, dict):
+                        properties = {}
+                    increment(day["layerCounts"], sanitize_string(properties.get("nextLayer") or "unknown", 40))
+        save_aggregate_state(state)
 
 
 def event_name_label(event_name):
@@ -297,6 +434,8 @@ def write_feedback_events(events):
 def should_store_event(event):
     event_name = sanitize_string(event.get("eventName"), 120)
     event_type = sanitize_string(event.get("eventType"), 120)
+    if event_name == "session_heartbeat" or event_type == "心跳":
+        return False
     return (
         event_name in CORE_EVENT_NAMES
         or event_type in {"反馈提交", "错误"}
@@ -304,6 +443,10 @@ def should_store_event(event):
 
 
 def write_telemetry_events(events):
+    try:
+        update_aggregate_state(events)
+    except Exception as exc:
+        log("aggregate update failed:", exc)
     feedback_result = write_feedback_events(events)
     records = [
         {"fields": event_to_fields(event)}

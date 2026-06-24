@@ -227,7 +227,7 @@ QString CalendarSyncService::buildIcs(const QString &uid, const QString &summary
     const QString end = date.addDays(1).toString(QStringLiteral("yyyyMMdd"));
     const QStringList lines = {
         QStringLiteral("BEGIN:VCALENDAR"),
-        QStringLiteral("PRODID:-//XiaoU Todo//todo260606//CN"),
+        QStringLiteral("PRODID:-//XiaoU Todo//xiaou-todo//CN"),
         QStringLiteral("VERSION:2.0"),
         QStringLiteral("BEGIN:VEVENT"),
         QStringLiteral("DTSTAMP:%1").arg(stamp),
