@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls 2.15 as QQC
 import QtQuick.Layouts 1.15
+import Qt5Compat.GraphicalEffects as Fx
 import org.deepin.dtk 1.0 as D
 import "."
 import "components"
@@ -1009,6 +1010,7 @@ D.ApplicationWindow {
                                                 Item {
                                                     Layout.preferredWidth: noteRow.confirmingDelete ? 64 : (noteRow.hovered ? 64 : 42)
                                                     Layout.preferredHeight: 24
+                                                    readonly property color deleteActionColor: listDeleteMouse.containsMouse ? root.redColor : root.sidebarMutedColor
 
                                                     Row {
                                                         anchors.right: parent.right
@@ -1016,20 +1018,32 @@ D.ApplicationWindow {
                                                         spacing: 5
                                                         visible: noteRow.hovered && !noteRow.confirmingDelete
 
-                                                        Image {
+                                                        Item {
                                                             width: 14
                                                             height: 14
                                                             anchors.verticalCenter: parent.verticalCenter
-                                                            source: "qrc:/assets/trash-muted.svg"
-                                                            sourceSize.width: 14
-                                                            sourceSize.height: 14
-                                                            smooth: true
+
+                                                            Image {
+                                                                id: sidebarDeleteIconSource
+                                                                anchors.fill: parent
+                                                                source: "qrc:/assets/trash-muted.svg"
+                                                                sourceSize.width: 14
+                                                                sourceSize.height: 14
+                                                                smooth: true
+                                                                visible: false
+                                                            }
+
+                                                            Fx.ColorOverlay {
+                                                                anchors.fill: parent
+                                                                source: sidebarDeleteIconSource
+                                                                color: parent.parent.parent.deleteActionColor
+                                                            }
                                                         }
 
                                                         D.Label {
                                                             anchors.verticalCenter: parent.verticalCenter
                                                             text: noteRow.confirmingDelete ? "确认删除" : "删除"
-                                                            color: root.sidebarMutedColor
+                                                            color: parent.parent.deleteActionColor
                                                             font.pixelSize: 12
                                                             font.weight: Font.DemiBold
                                                         }
@@ -2024,6 +2038,10 @@ D.ApplicationWindow {
         onOpened: Qt.callLater(function() {
             feedbackContentInput.forceActiveFocus()
         })
+        onClosed: {
+            feedbackContentInput.text = ""
+            feedbackContactInput.text = ""
+        }
 
         background: Rectangle {
             radius: 14
@@ -2038,13 +2056,49 @@ D.ApplicationWindow {
             anchors.margins: 22
             spacing: 8
 
-            D.Label {
+            Item {
                 Layout.fillWidth: true
-                text: "反馈"
-                color: root.textColor
-                font.pixelSize: 17
-                font.weight: Font.DemiBold
-                horizontalAlignment: Text.AlignHCenter
+                Layout.preferredHeight: 28
+
+                D.Label {
+                    anchors.centerIn: parent
+                    text: "反馈"
+                    color: root.textColor
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+
+                Item {
+                    id: feedbackCloseButton
+                    width: 28
+                    height: 28
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: feedbackCloseMouse.containsMouse
+                               ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.10))
+                               : "transparent"
+                    }
+
+                    D.Label {
+                        anchors.centerIn: parent
+                        text: "×"
+                        color: feedbackCloseMouse.containsMouse ? root.textColor : root.mutedColor
+                        font.pixelSize: 20
+                        lineHeight: 0.9
+                    }
+
+                    MouseArea {
+                        id: feedbackCloseMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: feedbackDialog.close()
+                    }
+                }
             }
 
             D.Label {
@@ -2074,17 +2128,69 @@ D.ApplicationWindow {
                               : root.glassControlBorderColor
                 antialiasing: true
 
-                QQC.TextArea {
-                    id: feedbackContentInput
+                QQC.ScrollView {
+                    id: feedbackContentScrollView
                     anchors.fill: parent
                     anchors.margins: 10
-                    placeholderText: "请输入你的问题、建议或想要的功能..."
-                    placeholderTextColor: root.weakColor
-                    color: root.textColor
-                    selectByMouse: true
-                    wrapMode: TextEdit.Wrap
-                    font.pixelSize: 13
-                    background: Item {}
+                    clip: true
+                    QQC.ScrollBar.horizontal.policy: QQC.ScrollBar.AlwaysOff
+                    QQC.ScrollBar.vertical: QQC.ScrollBar {
+                        policy: feedbackContentInput.contentHeight > feedbackContentScrollView.height
+                                ? QQC.ScrollBar.AlwaysOn
+                                : QQC.ScrollBar.AlwaysOff
+                        width: 6
+                        padding: 0
+                        background: Item {}
+                        contentItem: Rectangle {
+                            implicitWidth: 4
+                            radius: 2
+                            color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.28) : Qt.rgba(1, 1, 1, 0.30)
+                        }
+                    }
+
+                    QQC.TextArea {
+                        id: feedbackContentInput
+                        placeholderText: "请输入你的问题、建议或想要的功能..."
+                        placeholderTextColor: root.weakColor
+                        color: root.textColor
+                        selectByMouse: true
+                        wrapMode: TextEdit.Wrap
+                        font.pixelSize: 13
+                        rightPadding: 14
+                        background: Item {}
+
+                        onTextChanged: Qt.callLater(function() {
+                            if (feedbackContentInput.activeFocus)
+                                feedbackContentInput.cursorPosition = feedbackContentInput.text.length
+                        })
+                    }
+                }
+
+                Rectangle {
+                    id: feedbackContentScrollTrack
+                    anchors.right: parent.right
+                    anchors.rightMargin: 5
+                    anchors.top: parent.top
+                    anchors.topMargin: 12
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 12
+                    width: 3
+                    radius: 2
+                    z: 2
+                    visible: feedbackContentInput.contentHeight > feedbackContentScrollView.height
+                    color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.10)
+
+                    Rectangle {
+                        width: parent.width
+                        radius: 2
+                        height: Math.max(24, parent.height * feedbackContentScrollView.contentItem.height / Math.max(feedbackContentInput.contentHeight, feedbackContentScrollView.contentItem.height))
+                        y: {
+                            var flick = feedbackContentScrollView.contentItem
+                            var maxY = Math.max(1, flick.contentHeight - flick.height)
+                            return (parent.height - height) * Math.max(0, Math.min(1, flick.contentY / maxY))
+                        }
+                        color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.32) : Qt.rgba(1, 1, 1, 0.36)
+                    }
                 }
             }
 

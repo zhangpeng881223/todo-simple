@@ -282,12 +282,15 @@ Item {
         hoverEnabled: true
         onClicked: root.activeIndex = index
 
-        contentItem: RowLayout {
-            spacing: 8
+        contentItem: Item {
+            anchors.fill: parent
 
             Image {
-                Layout.preferredWidth: 16
-                Layout.preferredHeight: 16
+                id: navIcon
+                width: 16
+                height: 16
+                x: 16
+                y: Math.round((parent.height - height) / 2)
                 source: "qrc:/assets/settings-" + navButton.iconName + "-"
                         + (root.activeIndex === navButton.index ? "active" : root.lightTheme ? "dark" : "light") + ".svg"
                 sourceSize.width: 16
@@ -297,11 +300,17 @@ Item {
             }
 
             D.Label {
-                Layout.fillWidth: true
+                height: implicitHeight
+                anchors.left: navIcon.right
+                anchors.leftMargin: 8
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: navIcon.verticalCenter
                 text: navButton.text
                 color: root.activeIndex === navButton.index ? "#ffffff" : root.textColor
                 font.pixelSize: 13
                 font.weight: root.activeIndex === navButton.index ? Font.DemiBold : Font.Normal
+                horizontalAlignment: Text.AlignLeft
                 verticalAlignment: Text.AlignVCenter
                 elide: Text.ElideRight
             }
@@ -572,16 +581,67 @@ Item {
         id: option
         property bool optionChecked: false
         implicitHeight: 30
-        hoverEnabled: false
         checked: option.optionChecked
         spacing: 6
+        Layout.alignment: Qt.AlignVCenter
+
+        indicator: Rectangle {
+            implicitWidth: 14
+            implicitHeight: 14
+            x: 0
+            y: option.topPadding + (option.availableHeight - height) / 2
+            radius: 7
+            color: "transparent"
+            border.width: 1.4
+            border.color: option.checked ? root.accentColor
+                                         : (root.lightTheme ? Qt.rgba(0, 0, 0, 0.55)
+                                                            : Qt.rgba(1, 1, 1, 0.62))
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: 6
+                height: 6
+                radius: 3
+                color: root.accentColor
+                visible: option.checked
+            }
+        }
 
         contentItem: D.Label {
             text: option.text
             color: root.textColor
             font.pixelSize: 13
-            leftPadding: 24
             verticalAlignment: Text.AlignVCenter
+            leftPadding: 20
+        }
+    }
+
+    component SettingsSecondaryButton: D.Button {
+        id: secondaryButton
+        implicitWidth: 92
+        implicitHeight: 32
+        font.pixelSize: 13
+
+        contentItem: D.Label {
+            text: secondaryButton.text
+            color: root.textColor
+            font: secondaryButton.font
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+
+        background: Rectangle {
+            radius: 8
+            color: secondaryButton.pressed
+                   ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.16))
+                   : secondaryButton.hovered
+                     ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.12))
+                     : (root.lightTheme ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(1, 1, 1, 0.08))
+            border.width: 1
+            border.color: secondaryButton.hovered
+                          ? (root.lightTheme ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(1, 1, 1, 0.20))
+                          : root.borderColor
         }
     }
 
@@ -833,7 +893,7 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 16
+                spacing: 18
 
                 BackgroundRadioOption {
                     text: "默认壁纸"
@@ -861,9 +921,7 @@ Item {
         SectionBlock {
             title: "主窗口透明度设置"
             desc: "控制主窗口底层玻璃、右侧工作区浮层和背景模糊程度。"
-            action: D.Button {
-                implicitWidth: 92
-                implicitHeight: 32
+            action: SettingsSecondaryButton {
                 text: "恢复默认"
                 onClicked: root.resetMainWindowAlpha()
             }
@@ -1134,14 +1192,6 @@ Item {
                 spacing: 0
 
                 Item { Layout.fillWidth: true }
-
-                D.Label {
-                    text: "阿弥陀佛，"
-                    color: root.textColor
-                    font.pixelSize: 28
-                    font.weight: Font.DemiBold
-                    verticalAlignment: Text.AlignVCenter
-                }
 
                 D.Label {
                     id: algorithmNatureLabel

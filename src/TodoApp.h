@@ -137,6 +137,7 @@ private:
     QQuickView *createView(const QUrl &source, const QSize &size, const QSize &minSize, bool transparent, bool resizable);
     void createTray();
     void handleTrayTrigger();
+    QString createNewNote(bool discardIfEmptyOnHide);
     void openNoteWithLayer(const QString &noteId, const QString &layer);
     QString summarizeNoteForSource(const QString &noteId, const QString &eventName, const QString &source);
     QString latestCreatedNoteId() const;

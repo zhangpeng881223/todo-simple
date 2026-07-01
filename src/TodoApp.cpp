@@ -70,6 +70,8 @@ constexpr double DarkThemeRightPanelOpacity = 0.26;
 constexpr double DarkThemeWallpaperBlur = 0.70;
 constexpr int DarkThemeMainAppearanceVersion = 3;
 constexpr int TelemetryHeartbeatIntervalMs = 10 * 60 * 1000;
+const char DiscardIfEmptyOnHideKey[] = "discardIfEmptyOnHide";
+const char DiscardIfEmptyOnHideTitleKey[] = "discardIfEmptyOnHideTitle";
 
 bool isCoreTelemetryEvent(const QString &eventName, const QString &eventType)
 {
@@ -100,6 +102,16 @@ QString valueString(const QJsonObject &object, const QString &key, const QString
     return object.value(key).toVariant().toString().isEmpty()
         ? fallback
         : object.value(key).toVariant().toString();
+}
+
+bool hasNonEmptyTodoText(const QJsonArray &todos)
+{
+    for (const QJsonValue &value : todos) {
+        if (!value.toObject().value(QStringLiteral("text")).toString().trimmed().isEmpty()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 double numberSetting(const QJsonObject &settings, const QString &key, double fallback)
@@ -803,6 +815,14 @@ void TodoApp::updateNote(const QString &noteId, const QJsonObject &patch)
         for (auto it = patch.begin(); it != patch.end(); ++it) {
             note.insert(it.key(), it.value());
         }
+        const bool hasUserTodoText = patch.contains(QStringLiteral("todos")) &&
+            hasNonEmptyTodoText(patch.value(QStringLiteral("todos")).toArray());
+        const bool hasUserTitle = patch.contains(QStringLiteral("title")) &&
+            note.value(QStringLiteral("title")).toString() != note.value(QString::fromLatin1(DiscardIfEmptyOnHideTitleKey)).toString();
+        if (hasUserTodoText || hasUserTitle) {
+            note.remove(QString::fromLatin1(DiscardIfEmptyOnHideKey));
+            note.remove(QString::fromLatin1(DiscardIfEmptyOnHideTitleKey));
+        }
         note.insert(QStringLiteral("updatedDate"), isoNow());
         m_notes.replace(i, note);
         saveNotes();
@@ -1087,15 +1107,21 @@ void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int
 
 QString TodoApp::createNewNote()
 {
+    return createNewNote(false);
+}
+
+QString TodoApp::createNewNote(bool discardIfEmptyOnHide)
+{
     if (m_notes.size() >= MaxNotes) {
         return {};
     }
 
     const QString id = QString::number(QDateTime::currentMSecsSinceEpoch());
     const QPoint pos = defaultNotePosition(120, 100);
+    const QString title = generateDefaultNoteTitle();
     QJsonObject note;
     note.insert(QStringLiteral("id"), id);
-    note.insert(QStringLiteral("title"), generateDefaultNoteTitle());
+    note.insert(QStringLiteral("title"), title);
     note.insert(QStringLiteral("todos"), QJsonArray());
     note.insert(QStringLiteral("position"), QJsonObject{{QStringLiteral("x"), pos.x()}, {QStringLiteral("y"), pos.y()}});
     note.insert(QStringLiteral("size"), QJsonObject{{QStringLiteral("width"), 280}, {QStringLiteral("height"), 400}});
@@ -1103,6 +1129,10 @@ QString TodoApp::createNewNote()
     note.insert(QStringLiteral("windowLayer"), QStringLiteral("normal"));
     note.insert(QStringLiteral("createdDate"), isoNow());
     note.insert(QStringLiteral("updatedDate"), isoNow());
+    if (discardIfEmptyOnHide) {
+        note.insert(QString::fromLatin1(DiscardIfEmptyOnHideKey), true);
+        note.insert(QString::fromLatin1(DiscardIfEmptyOnHideTitleKey), title);
+    }
     m_notes.append(note);
     saveNotes();
     emit notesChanged();
@@ -1249,6 +1279,28 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
 
 void TodoApp::hideNote(const QString &noteId)
 {
+    for (int i = m_notes.size() - 1; i >= 0; --i) {
+        const QJsonObject note = m_notes.at(i).toObject();
+        if (note.value(QStringLiteral("id")).toVariant().toString() != noteId) {
+            continue;
+        }
+
+        const bool discardIfEmptyOnHide = note.value(QString::fromLatin1(DiscardIfEmptyOnHideKey)).toBool(false);
+        const QString originalTitle = note.value(QString::fromLatin1(DiscardIfEmptyOnHideTitleKey)).toString();
+        const bool titleUnchanged = originalTitle.isEmpty() || note.value(QStringLiteral("title")).toString() == originalTitle;
+        if (discardIfEmptyOnHide && titleUnchanged && !hasNonEmptyTodoText(note.value(QStringLiteral("todos")).toArray())) {
+            m_notes.removeAt(i);
+            saveNotes();
+            emit notesChanged();
+            if (QQuickView *view = m_noteViews.value(noteId)) {
+                view->close();
+                view->deleteLater();
+            }
+            return;
+        }
+        break;
+    }
+
     QJsonObject patch;
     patch.insert(QStringLiteral("visible"), false);
     updateNote(noteId, patch);
@@ -2202,7 +2254,9 @@ void TodoApp::createTray()
     m_tray = new QSystemTrayIcon(productIcon(), this);
     m_trayMenu = new QMenu;
     m_trayMenu->addAction(QStringLiteral("打开主窗口"), this, &TodoApp::showListWindow);
-    m_trayMenu->addAction(QStringLiteral("新建桌面待办页"), this, &TodoApp::createNewNote);
+    m_trayMenu->addAction(QStringLiteral("新建桌面待办页"), this, [this]() {
+        createNewNote();
+    });
     m_trayMenu->addSeparator();
     m_trayMenu->addAction(QStringLiteral("AI总结本周"), this, [this]() {
         const QString result = summarizeNotesRange(QStringLiteral("week"));
@@ -2249,7 +2303,7 @@ void TodoApp::handleTrayTrigger()
     }
 
     if (latestVisibleNoteId.isEmpty()) {
-        createNewNote();
+        createNewNote(true);
         return;
     }
 
