@@ -76,6 +76,16 @@
         <file>assets/sidebar-glass-shadow.png</file>
         <file>assets/sidebar-glass-shadow-tall.png</file>
         <file>assets/xiaou-todo-app-icon.png</file>
+        <file>assets/app-icons/xiaou-todo-16.png</file>
+        <file>assets/app-icons/xiaou-todo-24.png</file>
+        <file>assets/app-icons/xiaou-todo-32.png</file>
+        <file>assets/app-icons/xiaou-todo-48.png</file>
+        <file>assets/app-icons/xiaou-todo-64.png</file>
+        <file>assets/app-icons/xiaou-todo-96.png</file>
+        <file>assets/app-icons/xiaou-todo-128.png</file>
+        <file>assets/app-icons/xiaou-todo-256.png</file>
+        <file>assets/app-icons/xiaou-todo-512.png</file>
+        <file>assets/app-icons/xiaou-todo-1024.png</file>
         <!-- Calendar/event editor is parked for the current version. -->
         <!-- <file>CalendarWindow.qml</file> -->
         <!-- <file>EventEditorWindow.qml</file> -->

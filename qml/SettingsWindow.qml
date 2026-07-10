@@ -143,7 +143,7 @@ Item {
                     NavButton { text: "桌面待办"; index: 1; iconName: "desktop-todo" }
                     NavButton { text: "AI总结"; index: 2; iconName: "ai-summary" }
                     NavButton { text: "数据存储"; index: 3; iconName: "data-storage" }
-                    NavButton { text: "彩蛋"; index: 4; iconName: "easter-egg" }
+                    NavButton { text: "其它"; index: 4; iconName: "easter-egg" }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -1058,33 +1058,45 @@ Item {
                 Item { Layout.fillWidth: true }
             }
 
-            QQC.TextArea {
-                id: promptEdit
+            QQC.ScrollView {
+                id: promptScroll
                 Layout.fillWidth: true
                 Layout.preferredHeight: 230
-                text: root.aiTemplateDraft
-                wrapMode: TextEdit.Wrap
-                selectByMouse: true
-                color: root.textColor
-                selectedTextColor: "#ffffff"
-                selectionColor: root.accentColor
-                font.pixelSize: 13
-                leftPadding: 12
-                rightPadding: 12
-                topPadding: 10
-                bottomPadding: 10
-                onTextChanged: {
-                    if (text !== root.aiTemplateDraft) {
-                        root.aiTemplateDraft = text
-                        root.aiDirty = true
-                    }
-                }
+                clip: true
+                contentWidth: availableWidth
+                QQC.ScrollBar.horizontal.policy: QQC.ScrollBar.AlwaysOff
+                QQC.ScrollBar.vertical.policy: QQC.ScrollBar.AsNeeded
 
                 background: Rectangle {
                     radius: 8
                     color: root.controlBase
                     border.width: 1
                     border.color: promptEdit.activeFocus ? root.accentColor : root.borderColor
+                }
+
+                QQC.TextArea {
+                    id: promptEdit
+                    width: promptScroll.availableWidth
+                    text: root.aiTemplateDraft
+                    wrapMode: TextEdit.Wrap
+                    selectByMouse: true
+                    color: root.textColor
+                    selectedTextColor: "#ffffff"
+                    selectionColor: root.accentColor
+                    font.pixelSize: 13
+                    leftPadding: 12
+                    rightPadding: 12
+                    topPadding: 10
+                    bottomPadding: 10
+                    persistentSelection: true
+                    onTextChanged: {
+                        if (text !== root.aiTemplateDraft) {
+                            root.aiTemplateDraft = text
+                            root.aiDirty = true
+                        }
+                    }
+
+                    background: null
                 }
             }
 

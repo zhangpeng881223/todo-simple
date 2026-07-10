@@ -7,3 +7,4 @@ Icon=xiaou-todo
 Terminal=false
 Categories=Utility;
 StartupNotify=true
+StartupWMClass=xiaou-todo

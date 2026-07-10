@@ -244,7 +244,13 @@ Item {
 
     function ensureInitialTodoInput() {
         if (noteTodosModel.count === 0) {
-            addTodo()
+            var ensuredId = noteController.ensureTodoInput()
+            if (ensuredId && ensuredId.length > 0) {
+                pendingFocusId = ensuredId
+                pendingFocusIndex = -1
+                pendingFocusAttempts = 0
+                schedulePendingFocusReveal()
+            }
             return
         }
         if (noteTodosModel.count === 1 && String(noteTodosModel.get(0).text || "").trim().length === 0) {
@@ -283,6 +289,17 @@ Item {
         }
     }
 
+    function clearTodoFocusOnWindowDeactivate() {
+        pendingFocusId = ""
+        pendingFocusIndex = -1
+        pendingFocusAttempts = 0
+        var editor = activeTodoEditor
+        if (editor) {
+            editor.cursorVisible = false
+            editor.focus = false
+        }
+    }
+
     function openSummaryTemplateDialog() {
         summaryTemplateDraft = noteController.summaryTemplate
         summaryTemplateDialogOpen = true
@@ -313,6 +330,10 @@ Item {
             }
         }
         function onActiveChanged() {
+            if (root.hostWindow && !root.hostWindow.active) {
+                root.clearTodoFocusOnWindowDeactivate()
+                return
+            }
             if (root.hostWindow && root.hostWindow.active && root.pendingFocusId.length > 0) {
                 pendingFocusRetryTimer.restart()
             }

@@ -56,7 +56,9 @@ int NoteController::completedCount() const
 {
     int count = 0;
     for (const QJsonValue &value : todosArray()) {
-        if (value.toObject().value(QStringLiteral("completed")).toBool(false)) {
+        const QJsonObject object = value.toObject();
+        if (!object.value(QStringLiteral("text")).toString().trimmed().isEmpty()
+                && object.value(QStringLiteral("completed")).toBool(false)) {
             ++count;
         }
     }
@@ -65,7 +67,13 @@ int NoteController::completedCount() const
 
 int NoteController::totalCount() const
 {
-    return todosArray().size();
+    int count = 0;
+    for (const QJsonValue &value : todosArray()) {
+        if (!value.toObject().value(QStringLiteral("text")).toString().trimmed().isEmpty()) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 QString NoteController::summaryTemplate() const
@@ -94,14 +102,21 @@ QString NoteController::addTodo(int afterIndex)
 {
     QJsonArray todos = todosArray();
     const QString id = newTodoId();
-    QJsonObject item;
-    item.insert(QStringLiteral("id"), id);
-    item.insert(QStringLiteral("text"), QString());
-    item.insert(QStringLiteral("completed"), false);
-    item.insert(QStringLiteral("priority"), QStringLiteral("gray"));
-
     const int insertAt = afterIndex >= 0 ? qMin(actualIndexFromDisplayIndex(todos, afterIndex) + 1, todos.size()) : todos.size();
-    todos.insert(insertAt, item);
+    todos.insert(insertAt, createEmptyTodo(id));
+    saveTodos(todos);
+    return id;
+}
+
+QString NoteController::ensureTodoInput()
+{
+    QJsonArray todos = todosArray();
+    if (!todos.isEmpty()) {
+        return {};
+    }
+
+    const QString id = newTodoId();
+    todos.append(createEmptyTodo(id));
     saveTodos(todos);
     return id;
 }
@@ -130,6 +145,9 @@ void NoteController::commitTodoText(int index, const QString &text)
 
     if (text.trimmed().isEmpty()) {
         todos.removeAt(actualIndex);
+        if (todos.isEmpty()) {
+            todos.append(createEmptyTodo());
+        }
     } else {
         QJsonObject item = todos.at(actualIndex).toObject();
         item.insert(QStringLiteral("text"), text.trimmed());
@@ -149,6 +167,12 @@ QString NoteController::commitTodoTextAndAddNext(int index, const QString &text)
     const QString trimmed = text.trimmed();
     if (trimmed.isEmpty()) {
         todos.removeAt(actualIndex);
+        if (todos.isEmpty()) {
+            const QString id = newTodoId();
+            todos.append(createEmptyTodo(id));
+            saveTodos(todos);
+            return id;
+        }
         saveTodos(todos);
         return {};
     }
@@ -190,6 +214,9 @@ void NoteController::deleteTodo(int index)
         return;
     }
     todos.removeAt(actualIndex);
+    if (todos.isEmpty()) {
+        todos.append(createEmptyTodo());
+    }
     saveTodos(todos);
 }
 
@@ -295,6 +322,16 @@ QJsonObject NoteController::note() const
 QJsonArray NoteController::todosArray() const
 {
     return note().value(QStringLiteral("todos")).toArray();
+}
+
+QJsonObject NoteController::createEmptyTodo(const QString &id) const
+{
+    QJsonObject item;
+    item.insert(QStringLiteral("id"), id.isEmpty() ? newTodoId() : id);
+    item.insert(QStringLiteral("text"), QString());
+    item.insert(QStringLiteral("completed"), false);
+    item.insert(QStringLiteral("priority"), QStringLiteral("gray"));
+    return item;
 }
 
 void NoteController::saveTodos(const QJsonArray &todos)

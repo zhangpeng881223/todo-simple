@@ -12,6 +12,9 @@
 #include <QCursor>
 #include <QDate>
 #include <QDateTime>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusVariant>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -26,6 +29,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QBoxLayout>
+#include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QPainter>
 #include <QPixmap>
@@ -45,15 +51,20 @@
 #include <QWindow>
 #include <DAboutDialog>
 #include <DGuiApplicationHelper>
+#include <DLabel>
 
 #include <cmath>
 #include <memory>
 #include <utility>
 
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+
 namespace {
 constexpr int MaxNotes = 999;
 constexpr int MaxPromptLength = 12000;
 const char ProductIconPath[] = ":/assets/xiaou-todo-app-icon.png";
+const char ProductIconLargePath[] = ":/assets/app-icons/xiaou-todo-1024.png";
 const char DefaultMainWallpaperPath[] = "qrc:/assets/default-main-wallpaper.jpg";
 constexpr double DefaultWallpaperWindowOpacity = 0.405;
 constexpr double DefaultWallpaperRightPanelOpacity = 0.70;
@@ -68,7 +79,7 @@ constexpr double DarkWallpaperWindowOpacity = 0.40;
 constexpr double WallpaperBrightnessThreshold = 0.55;
 constexpr double DarkThemeRightPanelOpacity = 0.26;
 constexpr double DarkThemeWallpaperBlur = 0.70;
-constexpr int DarkThemeMainAppearanceVersion = 3;
+constexpr int DarkThemeMainAppearanceVersion = 4;
 constexpr int TelemetryHeartbeatIntervalMs = 10 * 60 * 1000;
 const char DiscardIfEmptyOnHideKey[] = "discardIfEmptyOnHide";
 const char DiscardIfEmptyOnHideTitleKey[] = "discardIfEmptyOnHideTitle";
@@ -135,6 +146,36 @@ QString summaryTemplateKey(const QString &scope)
     return QStringLiteral("noteSummaryTemplate");
 }
 
+QString legacyNoteSummaryTemplate()
+{
+    return QStringLiteral("请你作为我的工作助理，总结下面这个“今日待办”窗口。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 今日重点\n"
+                          "2. 已完成事项\n"
+                          "3. 未完成事项\n"
+                          "4. 下一步建议");
+}
+
+QString legacyWeekSummaryTemplate()
+{
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本周所有待办。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 本周重点\n"
+                          "2. 已完成进展\n"
+                          "3. 未完成事项与风险\n"
+                          "4. 下周行动建议");
+}
+
+QString legacyMonthSummaryTemplate()
+{
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本月所有待办。\n\n"
+                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
+                          "1. 本月重点成果\n"
+                          "2. 事项推进情况\n"
+                          "3. 长期未完成事项\n"
+                          "4. 下月优化建议");
+}
+
 QString normalizedWindowLayer(const QString &layer)
 {
     if (layer == QStringLiteral("bottom") || layer == QStringLiteral("top")) {
@@ -154,16 +195,137 @@ Qt::WindowFlags baseViewFlags(bool resizable)
     return flags;
 }
 
-Qt::WindowFlags noteViewFlags(const QString &layer)
+Qt::WindowFlags noteViewFlags(const QString &layer, bool topLayerSuspended = false)
 {
-    Qt::WindowFlags flags = baseViewFlags(true) | Qt::Tool;
     const QString normalized = normalizedWindowLayer(layer);
+    // Desktop notes must be utility windows before their first map. DDE's dock
+    // classifies a normal window at map time and keeps a taskbar entry after
+    // the main window is hidden.
+    Qt::WindowFlags flags = baseViewFlags(true) | Qt::Tool;
     if (normalized == QStringLiteral("bottom")) {
         flags |= Qt::WindowStaysOnBottomHint;
-    } else if (normalized == QStringLiteral("top")) {
+    } else if (normalized == QStringLiteral("top") && !topLayerSuspended) {
         flags |= Qt::WindowStaysOnTopHint;
     }
     return flags;
+}
+
+void applySkipTaskbarState(QWindow *window)
+{
+    if (!window) {
+        return;
+    }
+
+    const WId windowId = window->winId();
+    if (!windowId) {
+        return;
+    }
+
+    Display *display = XOpenDisplay(nullptr);
+    if (!display) {
+        return;
+    }
+
+    const Window xWindow = static_cast<Window>(windowId);
+    const Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
+    const Atom desiredStates[] = {
+        XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", False),
+        XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", False)
+    };
+
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long itemCount = 0;
+    unsigned long bytesAfter = 0;
+    unsigned char *data = nullptr;
+    QList<Atom> mergedStates;
+    if (XGetWindowProperty(display,
+                           xWindow,
+                           wmState,
+                           0,
+                           1024,
+                           False,
+                           XA_ATOM,
+                           &actualType,
+                           &actualFormat,
+                           &itemCount,
+                           &bytesAfter,
+                           &data) == Success
+        && actualType == XA_ATOM
+        && actualFormat == 32
+        && data) {
+        const auto *atoms = reinterpret_cast<const Atom *>(data);
+        for (unsigned long i = 0; i < itemCount; ++i) {
+            if (!mergedStates.contains(atoms[i])) {
+                mergedStates.append(atoms[i]);
+            }
+        }
+    }
+    if (data) {
+        XFree(data);
+    }
+
+    for (const Atom state : desiredStates) {
+        if (!mergedStates.contains(state)) {
+            mergedStates.append(state);
+        }
+    }
+
+    XChangeProperty(display,
+                    xWindow,
+                    wmState,
+                    XA_ATOM,
+                    32,
+                    PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(mergedStates.constData()),
+                    mergedStates.size());
+
+    const Atom wmWindowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+    const Atom windowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    XChangeProperty(display,
+                    xWindow,
+                    wmWindowType,
+                    XA_ATOM,
+                    32,
+                    PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(&windowType),
+                    1);
+
+    XFlush(display);
+    XCloseDisplay(display);
+}
+
+bool isWindowViewable(QWindow *window)
+{
+    if (!window || !window->winId()) {
+        return false;
+    }
+
+    Display *display = XOpenDisplay(nullptr);
+    if (!display) {
+        return window->isVisible();
+    }
+
+    XWindowAttributes attributes;
+    const bool viewable = XGetWindowAttributes(display, static_cast<Window>(window->winId()), &attributes)
+        && attributes.map_state == IsViewable;
+    XCloseDisplay(display);
+    return viewable;
+}
+
+void scheduleSkipTaskbarState(QWindow *window)
+{
+    if (!window) {
+        return;
+    }
+    applySkipTaskbarState(window);
+    QPointer<QWindow> guardedWindow(window);
+    QTimer::singleShot(0, window, [guardedWindow]() {
+        applySkipTaskbarState(guardedWindow.data());
+    });
+    QTimer::singleShot(160, window, [guardedWindow]() {
+        applySkipTaskbarState(guardedWindow.data());
+    });
 }
 
 QString todoText(const QJsonObject &todo)
@@ -199,30 +361,36 @@ QString completionSummary(const QJsonArray &todos)
 
 QIcon aboutProductIcon()
 {
-    const QPixmap source(QString::fromLatin1(ProductIconPath));
-    if (source.isNull()) {
-        return QIcon(QString::fromLatin1(ProductIconPath));
+    QIcon icon(QString::fromLatin1(ProductIconLargePath));
+    if (icon.isNull()) {
+        icon = QIcon(QString::fromLatin1(ProductIconPath));
     }
-
-    constexpr int canvasSize = 128;
-    constexpr int visualSize = 112;
-    QPixmap canvas(canvasSize, canvasSize);
-    canvas.fill(Qt::transparent);
-
-    QPainter painter(&canvas);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    const QRect target((canvasSize - visualSize) / 2,
-                       (canvasSize - visualSize) / 2,
-                       visualSize,
-                       visualSize);
-    painter.drawPixmap(target, source);
-
-    return QIcon(canvas);
+    return icon;
 }
 
 QIcon productIcon()
 {
-    return QIcon(QString::fromLatin1(ProductIconPath));
+    QIcon icon;
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-16.png"), QSize(16, 16));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-24.png"), QSize(24, 24));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-32.png"), QSize(32, 32));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-48.png"), QSize(48, 48));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-64.png"), QSize(64, 64));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-96.png"), QSize(96, 96));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-128.png"), QSize(128, 128));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-256.png"), QSize(256, 256));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-512.png"), QSize(512, 512));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-1024.png"), QSize(1024, 1024));
+    return icon;
+}
+
+void setProductIconOnWindow(QWindow *window)
+{
+    if (!window) {
+        return;
+    }
+    const QIcon icon = productIcon();
+    window->setIcon(icon);
 }
 
 QString appDataDir()
@@ -291,28 +459,6 @@ int currentWorkspaceNumber()
     bool ok = false;
     const int zeroBasedDesktop = output.mid(equalsIndex + 1).trimmed().toInt(&ok);
     return ok ? qMax(1, zeroBasedDesktop + 1) : 1;
-}
-
-void migrateLegacyDataDir(const QString &targetDir)
-{
-    const QString legacyDir = QDir::homePath() + QStringLiteral("/.todo260606");
-    if (!QDir(legacyDir).exists()) {
-        return;
-    }
-
-    QDir().mkpath(targetDir);
-    const QStringList dataFiles = {
-        QStringLiteral("notes.json"),
-        QStringLiteral("events.json"),
-        QStringLiteral("settings.json")
-    };
-    for (const QString &fileName : dataFiles) {
-        const QString source = QDir(legacyDir).filePath(fileName);
-        const QString target = QDir(targetDir).filePath(fileName);
-        if (QFile::exists(source) && !QFile::exists(target)) {
-            QFile::copy(source, target);
-        }
-    }
 }
 
 QStringList todoLines(const QJsonArray &todos)
@@ -396,7 +542,6 @@ TodoApp::~TodoApp()
 
 void TodoApp::initialize()
 {
-    migrateLegacyDataDir(m_dataDir);
     QDir().mkpath(m_dataDir);
     loadData();
     startTelemetry();
@@ -408,8 +553,48 @@ void TodoApp::initialize()
     syncDtkPalette();
     ensureSeedData();
     createTray();
+    setupLauncherVisibilityTracking();
 
     const QStringList args = QCoreApplication::arguments();
+    handleExternalLaunch(args);
+}
+
+void TodoApp::setupLauncherVisibilityTracking()
+{
+    QDBusConnection::sessionBus().connect(QStringLiteral("org.deepin.dde.Launcher1"),
+                                          QStringLiteral("/org/deepin/dde/Launcher1"),
+                                          QStringLiteral("org.deepin.dde.Launcher1"),
+                                          QStringLiteral("VisibleChanged"),
+                                          this,
+                                          SLOT(handleLauncherVisibleChanged(bool)));
+
+    QDBusMessage message = QDBusMessage::createMethodCall(QStringLiteral("org.deepin.dde.Launcher1"),
+                                                          QStringLiteral("/org/deepin/dde/Launcher1"),
+                                                          QStringLiteral("org.freedesktop.DBus.Properties"),
+                                                          QStringLiteral("Get"));
+    message << QStringLiteral("org.deepin.dde.Launcher1") << QStringLiteral("Visible");
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
+    if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+        m_launcherVisible = reply.arguments().constFirst().value<QDBusVariant>().variant().toBool();
+    }
+}
+
+void TodoApp::handleLauncherVisibleChanged(bool visible)
+{
+    if (m_launcherVisible == visible) {
+        return;
+    }
+
+    m_launcherVisible = visible;
+    for (auto it = m_noteViews.begin(); it != m_noteViews.end(); ++it) {
+        if (it.value() && noteWindowLayer(it.key()) == QStringLiteral("top")) {
+            applyNoteWindowLayer(it.key(), false);
+        }
+    }
+}
+
+void TodoApp::handleExternalLaunch(const QStringList &args)
+{
     QTimer::singleShot(0, this, [this, args]() {
         if (args.contains(QStringLiteral("--show-all"))) {
             showDefaultLaunchWindows();
@@ -583,12 +768,26 @@ void TodoApp::syncDtkPalette()
     m_syncingDtkPalette = false;
 }
 
+bool TodoApp::effectiveDarkTheme() const
+{
+    const QString themeSetting = theme();
+    if (themeSetting == QStringLiteral("dark")) {
+        return true;
+    }
+    if (themeSetting == QStringLiteral("light")) {
+        return false;
+    }
+
+    auto *helper = Dtk::Gui::DGuiApplicationHelper::instance();
+    return helper->themeType() != Dtk::Gui::DGuiApplicationHelper::LightType;
+}
+
 void TodoApp::applyMainWindowAppearanceDefaults()
 {
     const QString wallpaperMode = mainWallpaperMode();
     const bool userOverridden = m_settings.value(QStringLiteral("mainWindowOpacityUserOverridden")).toBool(false);
 
-    if (theme() == QStringLiteral("dark")) {
+    if (effectiveDarkTheme()) {
         if (!userOverridden) {
             const double windowOpacity = wallpaperMode == QStringLiteral("default")
                 ? DarkDefaultWallpaperWindowOpacity
@@ -668,7 +867,7 @@ double TodoApp::recommendedMainWindowOpacityForWallpaper(const QUrl &source) con
 {
     const double brightness = analyzeWallpaperBrightness(source);
     if (brightness < 0.0) {
-        return theme() == QStringLiteral("dark") ? DarkThemeWindowOpacity : SystemWallpaperWindowOpacity;
+        return effectiveDarkTheme() ? DarkThemeWindowOpacity : SystemWallpaperWindowOpacity;
     }
     return brightness >= WallpaperBrightnessThreshold ? BrightWallpaperWindowOpacity : DarkWallpaperWindowOpacity;
 }
@@ -706,6 +905,8 @@ void TodoApp::syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorTy
     // "follow system". Do not persist DTK's effective Light/Dark value back
     // into settings; otherwise windows can disagree and theme switching loops.
     if (theme() == QStringLiteral("system")) {
+        applyMainWindowAppearanceDefaults();
+        saveSettings();
         emit settingsChanged();
     }
 }
@@ -752,6 +953,30 @@ void TodoApp::resetSummaryTemplate(const QString &scope)
     m_settings.insert(summaryTemplateKey(scope), defaultSummaryTemplate(scope));
     saveSettings();
     emit settingsChanged();
+}
+
+void TodoApp::upgradeDefaultSummaryTemplates()
+{
+    bool changed = false;
+    auto upgradeIfLegacyDefault = [this, &changed](const QString &key, const QString &legacyValue, const QString &nextValue) {
+        if (!m_settings.contains(key)) {
+            return;
+        }
+        const QString currentValue = m_settings.value(key).toString();
+        if (currentValue.trimmed() == legacyValue.trimmed()) {
+            m_settings.insert(key, nextValue);
+            changed = true;
+        }
+    };
+
+    upgradeIfLegacyDefault(QStringLiteral("noteSummaryTemplate"), legacyNoteSummaryTemplate(), defaultNoteSummaryTemplate());
+    upgradeIfLegacyDefault(summaryTemplateKey(QStringLiteral("week")), legacyWeekSummaryTemplate(), defaultWeekSummaryTemplate());
+    upgradeIfLegacyDefault(summaryTemplateKey(QStringLiteral("month")), legacyMonthSummaryTemplate(), defaultMonthSummaryTemplate());
+
+    if (changed) {
+        saveSettings();
+        emit settingsChanged();
+    }
 }
 
 QString TodoApp::noteWindowLayer(const QString &noteId) const
@@ -1172,7 +1397,7 @@ void TodoApp::showLatestCreatedNoteOnDesktop()
         createNewNote();
         return;
     }
-    openNoteWithLayer(noteId, QStringLiteral("normal"));
+    openNoteWithLayer(noteId, QString());
 }
 
 void TodoApp::showDefaultLaunchWindows()
@@ -1222,6 +1447,8 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     setRequestedLayer(noteId);
     if (m_noteViews.value(noteId)) {
         m_noteViews.value(noteId)->show();
+        scheduleWindowIconPublish(m_noteViews.value(noteId));
+        scheduleSkipTaskbarState(m_noteViews.value(noteId));
         applyNoteWindowLayer(noteId, true);
         emit notesChanged();
         return;
@@ -1273,6 +1500,8 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     m_noteControllers.insert(noteId, controller);
     applyNoteWindowLayer(noteId, false);
     view->show();
+    scheduleWindowIconPublish(view);
+    scheduleSkipTaskbarState(view);
     applyNoteWindowLayer(noteId, true);
     emit notesChanged();
 }
@@ -1331,9 +1560,11 @@ void TodoApp::deleteNote(const QString &noteId)
 
 void TodoApp::showListWindow()
 {
-    if (m_listWindow) {
+    if (m_listWindow && isWindowViewable(m_listWindow)) {
         refreshWallpaper();
+        m_listWindow->showNormal();
         m_listWindow->show();
+        m_listWindow->setVisible(true);
         m_listWindow->raise();
         m_listWindow->requestActivate();
         trackTelemetry(QStringLiteral("main_window_opened"),
@@ -1342,23 +1573,35 @@ void TodoApp::showListWindow()
         return;
     }
 
+    if (m_listWindow) {
+        QWindow *oldWindow = m_listWindow.data();
+        m_listWindow = nullptr;
+        m_listEngine = nullptr;
+        oldWindow->deleteLater();
+    }
+
     refreshWallpaper();
-    m_listEngine = new QQmlEngine(this);
-    m_listEngine->rootContext()->setContextProperty(QStringLiteral("app"), this);
-    QQmlComponent component(m_listEngine, QUrl(QStringLiteral("qrc:/ListWindow.qml")));
+    auto *engine = new QQmlEngine(this);
+    m_listEngine = engine;
+    engine->rootContext()->setContextProperty(QStringLiteral("app"), this);
+    QQmlComponent component(engine, QUrl(QStringLiteral("qrc:/ListWindow.qml")));
     QObject *object = component.create();
     if (!object) {
         qWarning() << component.errors();
-        m_listEngine->deleteLater();
-        m_listEngine = nullptr;
+        if (m_listEngine == engine) {
+            m_listEngine = nullptr;
+        }
+        engine->deleteLater();
         return;
     }
     auto *window = qobject_cast<QWindow *>(object);
     if (!window) {
         qWarning() << "ListWindow root is not a QWindow";
         object->deleteLater();
-        m_listEngine->deleteLater();
-        m_listEngine = nullptr;
+        if (m_listEngine == engine) {
+            m_listEngine = nullptr;
+        }
+        engine->deleteLater();
         return;
     }
     window->setIcon(productIcon());
@@ -1374,14 +1617,17 @@ void TodoApp::showListWindow()
     connect(window, &QWindow::screenChanged, this, [this]() {
         refreshWallpaper();
     });
-    connect(window, &QObject::destroyed, this, [this]() {
-        m_listWindow = nullptr;
-        if (m_listEngine) {
-            m_listEngine->deleteLater();
+    connect(window, &QObject::destroyed, this, [this, window, engine]() {
+        if (m_listWindow == window) {
+            m_listWindow = nullptr;
+        }
+        if (m_listEngine == engine) {
             m_listEngine = nullptr;
         }
+        engine->deleteLater();
     });
     window->show();
+    scheduleWindowIconPublish(window);
     window->raise();
     window->requestActivate();
     refreshWallpaper();
@@ -1920,11 +2166,83 @@ void TodoApp::showAboutDialog()
     dialog->setWindowIcon(icon);
     dialog->setProductIcon(aboutProductIcon());
     dialog->setProductName(QStringLiteral("小U待办"));
-    dialog->setVersion(QStringLiteral("1.0.0"));
+    dialog->setVersion(QStringLiteral("2.0.0"));
     dialog->setDescription(QStringLiteral("一个面向 deepin/UOS 桌面的轻量待办工具。"));
     dialog->setAcknowledgementVisible(false);
     dialog->setLicenseEnabled(false);
     dialog->show();
+    QTimer::singleShot(0, dialog, [dialog]() {
+        const QString descriptionText = QStringLiteral("一个面向 deepin/UOS 桌面的轻量待办工具。");
+        QObject *versionObject = dialog->findChild<QObject *>(QStringLiteral("VersionLabel"));
+        QWidget *versionLabel = qobject_cast<QWidget *>(versionObject);
+        QWidget *contentWidget = versionLabel ? versionLabel->parentWidget() : nullptr;
+        auto *contentLayout = contentWidget ? dynamic_cast<QBoxLayout *>(contentWidget->layout()) : nullptr;
+        if (!versionLabel || !contentWidget || !contentLayout) {
+            qWarning() << "Unable to add author field to about dialog";
+            return;
+        }
+
+        auto directLayoutWidget = [contentWidget, contentLayout](QWidget *widget) -> QWidget * {
+            for (QWidget *candidate = widget; candidate; candidate = candidate->parentWidget()) {
+                if (candidate->parentWidget() == contentWidget && contentLayout->indexOf(candidate) >= 0) {
+                    return candidate;
+                }
+            }
+            return nullptr;
+        };
+
+        QLabel *descriptionLabel = qobject_cast<QLabel *>(dialog->findChild<QObject *>(QStringLiteral("DescriptionLabel")));
+        if (!descriptionLabel) {
+            const auto labels = contentWidget->findChildren<QLabel *>();
+            for (QLabel *label : labels) {
+                if (label->text() == descriptionText) {
+                    descriptionLabel = label;
+                    break;
+                }
+            }
+        }
+
+        QWidget *descriptionLayoutWidget = descriptionLabel ? directLayoutWidget(descriptionLabel) : nullptr;
+        int insertIndex = descriptionLayoutWidget ? contentLayout->indexOf(descriptionLayoutWidget) + 1 : -1;
+        if (insertIndex <= 0) {
+            const int versionIndex = contentLayout->indexOf(versionLabel);
+            if (versionIndex < 0) {
+                qWarning() << "Unable to locate description or version field in about dialog";
+                return;
+            }
+            insertIndex = versionIndex + 1;
+        }
+
+        QWidget *titleReference = insertIndex > 1 ? contentLayout->itemAt(insertIndex - 2)->widget() : nullptr;
+        QWidget *valueReference = descriptionLabel ? static_cast<QWidget *>(descriptionLabel) : versionLabel;
+        auto cloneAboutLabel = [contentWidget](const QString &text, QWidget *reference, const QString &objectName) {
+            auto *label = new Dtk::Widget::DLabel(text, contentWidget);
+            label->setObjectName(objectName);
+            if (reference) {
+                label->setFont(reference->font());
+                label->setPalette(reference->palette());
+                label->setSizePolicy(reference->sizePolicy());
+                label->setContentsMargins(reference->contentsMargins());
+                if (auto *referenceLabel = qobject_cast<QLabel *>(reference)) {
+                    label->setAlignment(referenceLabel->alignment());
+                    label->setWordWrap(referenceLabel->wordWrap());
+                }
+            }
+            return label;
+        };
+
+        auto *authorTitle = cloneAboutLabel(QStringLiteral("作者"),
+                                            titleReference,
+                                            QStringLiteral("AuthorTitleLabel"));
+        auto *authorLabel = cloneAboutLabel(QStringLiteral("黑桃老K"),
+                                            valueReference,
+                                            QStringLiteral("AuthorLabel"));
+
+        contentLayout->insertSpacing(insertIndex, 10);
+        ++insertIndex;
+        contentLayout->insertWidget(insertIndex, authorTitle);
+        contentLayout->insertWidget(insertIndex + 1, authorLabel);
+    });
     dialog->raise();
     dialog->activateWindow();
 }
@@ -2249,6 +2567,26 @@ QQuickView *TodoApp::createView(const QUrl &, const QSize &size, const QSize &mi
     return view;
 }
 
+void TodoApp::publishWindowIcon(QWindow *window) const
+{
+    setProductIconOnWindow(window);
+}
+
+void TodoApp::scheduleWindowIconPublish(QWindow *window) const
+{
+    if (!window) {
+        return;
+    }
+    publishWindowIcon(window);
+    QPointer<QWindow> guardedWindow(window);
+    QTimer::singleShot(0, window, [guardedWindow]() {
+        setProductIconOnWindow(guardedWindow.data());
+    });
+    QTimer::singleShot(160, window, [guardedWindow]() {
+        setProductIconOnWindow(guardedWindow.data());
+    });
+}
+
 void TodoApp::createTray()
 {
     m_tray = new QSystemTrayIcon(productIcon(), this);
@@ -2348,6 +2686,7 @@ void TodoApp::loadData()
         m_settings.insert(it.key(), it.value());
     }
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
+    upgradeDefaultSummaryTemplates();
 
     auto settingEquals = [this](const QString &key, double expected) {
         return std::abs(numberSetting(m_settings, key, -1.0) - expected) < 0.0005;
@@ -2376,7 +2715,7 @@ void TodoApp::loadData()
     }
 
     const int darkAppearanceVersion = m_settings.value(QStringLiteral("darkThemeMainAppearanceVersion")).toInt(0);
-    if (theme() == QStringLiteral("dark") && darkAppearanceVersion < DarkThemeMainAppearanceVersion) {
+    if (effectiveDarkTheme() && darkAppearanceVersion < DarkThemeMainAppearanceVersion) {
         applyMainWindowAppearanceDefaults();
     }
 }
@@ -2412,23 +2751,26 @@ void TodoApp::ensureSeedData()
     }
     const QPoint pos = defaultNotePosition();
     QJsonArray todos;
-    const QStringList tips = {
-        QStringLiteral("单击托盘图标新增待办窗口"),
-        QStringLiteral("善用回车可快速创建多个待办"),
-        QStringLiteral("鼠标悬浮待办可调整优先级"),
-        QStringLiteral("支持拖拽待办排序"),
-        QStringLiteral("设置中支持多彩、简约模式"),
-        QStringLiteral("设置中支持黑色/白色卡片"),
-        QStringLiteral("设置中支持调节透明度"),
-        QStringLiteral("支持导入/导出，换机无忧")
+    const QList<QPair<QString, QString>> tips = {
+        {QStringLiteral("单击托盘图标新增待办窗口"), QStringLiteral("orange")},
+        {QStringLiteral("善用回车快速创建多个待办"), QStringLiteral("orange")},
+        {QStringLiteral("鼠标悬浮待办可调整优先级"), QStringLiteral("blue")},
+        {QStringLiteral("支持拖拽待办排序"), QStringLiteral("green")},
+        {QStringLiteral("设置中支持多彩、简约模式"), QStringLiteral("gray")},
+        {QStringLiteral("设置中支持黑色/白色卡片"), QStringLiteral("blue")},
+        {QStringLiteral("设置中支持调节透明度"), QStringLiteral("gray")},
+        {QStringLiteral("支持导入/导出，换机无忧"), QStringLiteral("green")},
+        {QStringLiteral("!  AI总结日报/周报/月报"), QStringLiteral("red")},
+        {QStringLiteral("！设置中可切换壁纸"), QStringLiteral("red")},
+        {QStringLiteral("！一键同步到日历日程"), QStringLiteral("red")}
     };
     int i = 0;
-    for (const QString &tip : tips) {
+    for (const auto &tip : tips) {
         todos.append(QJsonObject{
             {QStringLiteral("id"), QString::number(QDateTime::currentMSecsSinceEpoch() + i++)},
-            {QStringLiteral("text"), tip},
+            {QStringLiteral("text"), tip.first},
             {QStringLiteral("completed"), false},
-            {QStringLiteral("priority"), i % 4 == 0 ? QStringLiteral("green") : i % 3 == 0 ? QStringLiteral("blue") : QStringLiteral("gray")}
+            {QStringLiteral("priority"), tip.second}
         });
     }
     m_notes.append(QJsonObject{
@@ -2467,13 +2809,16 @@ void TodoApp::applyNoteWindowLayer(const QString &noteId, bool activate)
     const QString layer = noteWindowLayer(noteId);
     const QRect geometry(view->x(), view->y(), view->width(), view->height());
     const bool wasVisible = view->isVisible();
-    const Qt::WindowFlags flags = noteViewFlags(layer);
+    const Qt::WindowFlags flags = noteViewFlags(layer, layer == QStringLiteral("top") && m_launcherVisible);
     if (view->flags() != flags) {
         view->setFlags(flags);
         view->setGeometry(geometry);
         if (wasVisible) {
             view->show();
+            scheduleSkipTaskbarState(view);
         }
+    } else if (wasVisible) {
+        scheduleSkipTaskbarState(view);
     }
 
     if (!wasVisible) {
@@ -2603,32 +2948,53 @@ QString TodoApp::sendPromptToUosAi(const QString &prompt) const
 
 QString TodoApp::defaultNoteSummaryTemplate() const
 {
-    return QStringLiteral("请你作为我的工作助理，总结下面这个“今日待办”窗口。\n\n"
-                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
-                          "1. 今日重点\n"
-                          "2. 已完成事项\n"
-                          "3. 未完成事项\n"
-                          "4. 下一步建议");
+    return QStringLiteral("请你作为我的工作助理，基于下面这个“今日待办”窗口生成一份概括型日报。\n\n"
+                          "目标：输出结论和归纳，不要把待办逐条改写成流水账。请根据待办数据自行统计数量。\n\n"
+                          "请按以下结构输出：\n"
+                          "今日共执行 X 项任务，已完成 Y 项，未完成 Z 项。\n\n"
+                          "已完成工作：\n"
+                          "- 合并相近事项，用 2-5 条概括今天实际完成的工作。\n\n"
+                          "未完成工作：\n"
+                          "- 按优先级和影响归纳未完成事项；没有则写“暂无”。\n\n"
+                          "明日建议：\n"
+                          "- 优先推进高优先级、反复出现或临近截止的事项。\n"
+                          "- 给出 1-3 条具体建议。\n\n"
+                          "要求：只基于待办数据，不编造；合并同类项；语言简洁，避免空话。");
 }
 
 QString TodoApp::defaultWeekSummaryTemplate() const
 {
-    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本周所有待办。\n\n"
-                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
-                          "1. 本周重点\n"
-                          "2. 已完成进展\n"
-                          "3. 未完成事项与风险\n"
-                          "4. 下周行动建议");
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据生成一份概括型周报。\n\n"
+                          "目标：按工作主题归纳，不要按日期逐条复述。请根据待办数据自行统计数量，并合并连续多天出现的同一件事。\n\n"
+                          "请按以下结构输出：\n"
+                          "本周共执行 X 项任务，已完成 Y 项，未完成 Z 项。\n\n"
+                          "已完成工作：\n"
+                          "- 合并同类事项，提炼 3-6 条本周完成的关键工作。\n\n"
+                          "未完成工作：\n"
+                          "- 按高优先级、阻塞延期、需要继续跟进分类概括；没有则写“暂无”。\n\n"
+                          "本周观察：\n"
+                          "- 概括本周工作重心、重复出现的问题或推进节奏。\n\n"
+                          "建议下周：\n"
+                          "- 优先完成高优先级和反复出现的未完成工作。\n"
+                          "- 给出 2-4 条可执行建议。\n\n"
+                          "要求：只基于待办数据，不编造；少写过程，多写结论；表达简洁清晰。");
 }
 
 QString TodoApp::defaultMonthSummaryTemplate() const
 {
-    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据总结本月所有待办。\n\n"
-                          "请按以下结构输出，语言简洁、具体，不要编造未出现的信息：\n"
-                          "1. 本月重点成果\n"
-                          "2. 事项推进情况\n"
-                          "3. 长期未完成事项\n"
-                          "4. 下月优化建议");
+    return QStringLiteral("请你作为我的工作助理，基于下面的小U待办数据生成一份概括型月报。\n\n"
+                          "目标：提炼本月工作成果、长期未完成事项和下月重点，不要输出流水账。请根据待办数据自行统计数量。\n\n"
+                          "请按以下结构输出：\n"
+                          "本月共执行 X 项任务，已完成 Y 项，未完成 Z 项。\n\n"
+                          "本月完成：\n"
+                          "- 按主题归并，提炼 4-8 条本月主要成果。\n\n"
+                          "未完成/延期：\n"
+                          "- 标出高优先级、长期停留或反复出现的事项；没有则写“暂无”。\n\n"
+                          "本月重点观察：\n"
+                          "- 概括本月工作重心、效率变化、风险和重复问题。\n\n"
+                          "下月建议：\n"
+                          "- 优先处理高优先级未完成事项，并给出 3-5 条具体推进建议。\n\n"
+                          "要求：只基于待办数据，不编造；合并同类项；语言简洁，突出结论和行动。");
 }
 
 QString TodoApp::buildCurrentNoteSummaryPrompt(const QJsonObject &note) const

@@ -34,6 +34,7 @@ public:
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE QString addTodo(int afterIndex = -1);
+    Q_INVOKABLE QString ensureTodoInput();
     Q_INVOKABLE void updateTodoText(int index, const QString &text);
     Q_INVOKABLE void commitTodoText(int index, const QString &text);
     Q_INVOKABLE QString commitTodoTextAndAddNext(int index, const QString &text);
@@ -54,6 +55,7 @@ signals:
 private:
     QJsonObject note() const;
     QJsonArray todosArray() const;
+    QJsonObject createEmptyTodo(const QString &id = QString()) const;
     void saveTodos(const QJsonArray &todos);
     int actualIndexFromDisplayIndex(const QJsonArray &todos, int displayIndex) const;
     QString newTodoId() const;

@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QQuickView>
 #include <QQmlEngine>
+#include <QStringList>
 #include <QSystemTrayIcon>
 #include <QUrl>
 #include <QVariantList>
@@ -50,6 +51,7 @@ public:
     ~TodoApp() override;
 
     void initialize();
+    void handleExternalLaunch(const QStringList &args);
 
     QVariantList notesList() const;
     QVariantList eventsList() const;
@@ -133,9 +135,15 @@ signals:
     void wallpaperChanged();
     void feedbackDialogRequested();
 
+private slots:
+    void handleLauncherVisibleChanged(bool visible);
+
 private:
     QQuickView *createView(const QUrl &source, const QSize &size, const QSize &minSize, bool transparent, bool resizable);
+    void publishWindowIcon(QWindow *window) const;
+    void scheduleWindowIconPublish(QWindow *window) const;
     void createTray();
+    void setupLauncherVisibilityTracking();
     void handleTrayTrigger();
     QString createNewNote(bool discardIfEmptyOnHide);
     void openNoteWithLayer(const QString &noteId, const QString &layer);
@@ -153,6 +161,7 @@ private:
     void scheduleNoteGeometrySave(const QString &noteId, QQuickView *view);
     void saveNoteGeometry(const QString &noteId, const QQuickView *view);
     void syncDtkPalette();
+    bool effectiveDarkTheme() const;
     void syncSettingFromDtkPalette(Dtk::Gui::DGuiApplicationHelper::ColorType paletteType);
     QString generateDefaultNoteTitle() const;
     QPoint defaultNotePosition(int xOffset = 20, int y = 20) const;
@@ -161,6 +170,7 @@ private:
     QString defaultNoteSummaryTemplate() const;
     QString defaultWeekSummaryTemplate() const;
     QString defaultMonthSummaryTemplate() const;
+    void upgradeDefaultSummaryTemplates();
     QString buildCurrentNoteSummaryPrompt(const QJsonObject &note) const;
     QString buildAllNotesSummaryPrompt() const;
     QString buildNotesRangeSummaryPrompt(const QString &scope) const;
@@ -189,6 +199,7 @@ private:
     QJsonArray m_events;
     QJsonObject m_settings;
     bool m_syncingDtkPalette = false;
+    bool m_launcherVisible = false;
     QSystemTrayIcon *m_tray = nullptr;
     QMenu *m_trayMenu = nullptr;
     QHash<QString, QPointer<QQuickView>> m_noteViews;

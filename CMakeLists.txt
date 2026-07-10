@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(xiaou-todo VERSION 1.0.0 LANGUAGES CXX)
+project(xiaou-todo VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +11,7 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Gui Network Quick Qu
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
 find_package(Dtk6Gui REQUIRED)
 find_package(Dtk6Widget REQUIRED)
+find_package(X11 REQUIRED)
 
 add_executable(xiaou-todo
     # Calendar/event editor is parked for the current version.
@@ -39,11 +40,29 @@ target_link_libraries(xiaou-todo
         Qt${QT_VERSION_MAJOR}::Widgets
         Dtk6::Gui
         Dtk6::Widget
+        X11::X11
 )
 
 install(TARGETS xiaou-todo RUNTIME DESTINATION bin)
 install(FILES xiaou-todo.desktop DESTINATION share/applications)
-install(FILES qml/assets/xiaou-todo-app-icon.png
-    DESTINATION share/icons/hicolor/128x128/apps
+set(XIAOU_ICON_SIZES 16 24 32 48 64 96 128 256 512 1024)
+foreach(icon_size IN LISTS XIAOU_ICON_SIZES)
+    foreach(icon_theme hicolor bloom)
+        install(FILES qml/assets/app-icons/xiaou-todo-${icon_size}.png
+            DESTINATION share/icons/${icon_theme}/${icon_size}x${icon_size}/apps
+            RENAME xiaou-todo.png
+        )
+        install(FILES qml/assets/app-icons/xiaou-todo-${icon_size}.png
+            DESTINATION share/icons/${icon_theme}/${icon_size}x${icon_size}/apps
+            RENAME xiaou-todo-calendar.png
+        )
+    endforeach()
+endforeach()
+install(FILES qml/assets/app-icons/xiaou-todo-128.png
+    DESTINATION share/pixmaps
     RENAME xiaou-todo.png
+)
+install(FILES qml/assets/app-icons/xiaou-todo-128.png
+    DESTINATION share/pixmaps
+    RENAME xiaou-todo-calendar.png
 )

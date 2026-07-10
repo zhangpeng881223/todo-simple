@@ -14,3 +14,7 @@ compare-old/
 final-compare/
 leftbar-compare/
 tune-260606/
+# App icons are release assets and must be tracked.
+!qml/assets/xiaou-todo-app-icon.png
+!qml/assets/app-icons/
+!qml/assets/app-icons/*.png

@@ -16,8 +16,13 @@ D.ApplicationWindow {
     visible: false
     title: "小U待办"
     color: "transparent"
-    flags: Qt.Window | Qt.WindowTitleHint | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
+    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
     background: Item {}
+
+    onClosing: function(close) {
+        close.accepted = false
+        root.hide()
+    }
 
     D.DWindow.enabled: true
     D.DWindow.themeType: root.dtkThemeType()
@@ -566,27 +571,11 @@ D.ApplicationWindow {
         width: Math.max(0, root.width - x - 300)
         height: root.titlebarReserve
         z: 101
-        property real pressedCursorX: 0
-        property real pressedCursorY: 0
-        property real pressedWindowX: 0
-        property real pressedWindowY: 0
 
         MouseArea {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
-            onPressed: {
-                var cursor = app.cursorPosition()
-                titleMoveArea.pressedCursorX = cursor.x
-                titleMoveArea.pressedCursorY = cursor.y
-                titleMoveArea.pressedWindowX = root.x
-                titleMoveArea.pressedWindowY = root.y
-            }
-            onPositionChanged: {
-                if (!pressed) return
-                var cursor = app.cursorPosition()
-                root.x = titleMoveArea.pressedWindowX + cursor.x - titleMoveArea.pressedCursorX
-                root.y = titleMoveArea.pressedWindowY + cursor.y - titleMoveArea.pressedCursorY
-            }
+            onPressed: root.startSystemMove()
         }
     }
 
@@ -645,27 +634,20 @@ D.ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: root.sidebarInset
 
-	                    Rectangle {
+	                    Image {
 	                        id: productLogo
-                        x: 5
-                        y: 5
-		                        width: root.sidebarLogoSize
-		                        height: root.sidebarLogoSize
-		                        radius: root.windowRadius
+	                        x: 5
+	                        y: 5
+	                        width: root.sidebarLogoSize
+	                        height: root.sidebarLogoSize
 	                        visible: root.sidebarLogoSize > 0
-	                        color: "transparent"
-	                        clip: true
-	                        antialiasing: true
+	                        source: "qrc:/assets/xiaou-todo-app-icon.png"
+	                        sourceSize.width: 1024
+	                        sourceSize.height: 1024
+	                        fillMode: Image.PreserveAspectFit
+	                        smooth: true
+	                        mipmap: true
 	                        z: 2
-
-                        Image {
-                            anchors.fill: parent
-                            source: "qrc:/assets/xiaou-todo-app-icon.png"
-                            sourceSize.width: parent.width
-                            sourceSize.height: parent.height
-                            fillMode: Image.PreserveAspectCrop
-	                            smooth: true
-	                        }
 	                    }
 
 	                    ColumnLayout {
@@ -1346,6 +1328,15 @@ D.ApplicationWindow {
                                 NumberAnimation { property: "scale"; to: 0.98; duration: 110; easing.type: Easing.InCubic }
                             }
 
+                            TapHandler {
+                                acceptedButtons: Qt.LeftButton
+                                gesturePolicy: TapHandler.WithinBounds
+                                onTapped: function(eventPoint, button) {
+                                    var p = todoList.mapToItem(windowShell, eventPoint.position.x, eventPoint.position.y)
+                                    root.clearInputFocusAt(p.x, p.y)
+                                }
+                            }
+
                             delegate: Item {
                                 id: todoRow
                                 width: todoList.width
@@ -1827,11 +1818,16 @@ D.ApplicationWindow {
                 }
 
                 Column {
-                    anchors.centerIn: parent
+                    id: emptyDetailState
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    // Keep the primary empty-state message on the pane's visual
+                    // center; its supporting copy sits below without pulling it up.
+                    y: (parent.height - emptyTitle.implicitHeight) / 2
                     spacing: 12
                     visible: !detailPane.note
 
                     D.Label {
+                        id: emptyTitle
                         text: "暂无待办"
                         color: root.textColor
                         font.pixelSize: 18
@@ -1840,11 +1836,12 @@ D.ApplicationWindow {
                     }
 
                     D.Label {
-                        width: 260
+                        width: Math.min(parent.parent.width - 56, implicitWidth)
                         text: "从左侧选择一个待办窗口，或点击左上角 + 新建。"
                         color: root.mutedColor
                         font.pixelSize: 13
-                        wrapMode: Text.WordWrap
+                        wrapMode: Text.NoWrap
+                        elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
                     }
                 }
