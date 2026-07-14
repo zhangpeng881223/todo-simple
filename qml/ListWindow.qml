@@ -72,6 +72,10 @@ D.ApplicationWindow {
     readonly property color toolbarAccentHoverColor: lightTheme ? "#168fe8" : "#59bcff"
     readonly property color toolbarAccentActiveColor: lightTheme ? "#006dff" : "#6ac7ff"
     readonly property color toolbarDangerHoverColor: lightTheme ? "#e9433c" : "#ff746e"
+    readonly property color contextMenuColor: lightTheme ? Qt.rgba(245 / 255, 245 / 255, 245 / 255, 0.88)
+                                                         : Qt.rgba(42 / 255, 42 / 255, 42 / 255, 0.88)
+    readonly property color contextMenuBorderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.08)
+                                                               : Qt.rgba(1, 1, 1, 0.10)
     readonly property string iconTone: lightTheme ? "dark" : "light"
 
     property string searchTerm: ""
@@ -902,11 +906,9 @@ D.ApplicationWindow {
                                                 implicitHeight: 140
                                                 radius: 8
                                                 antialiasing: true
-                                                color: root.lightTheme ? Qt.rgba(245 / 255, 245 / 255, 245 / 255, 0.96)
-                                                                       : Qt.rgba(42 / 255, 42 / 255, 42 / 255, 0.96)
+                                                color: root.contextMenuColor
                                                 border.width: 1
-                                                border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.08)
-                                                                             : Qt.rgba(1, 1, 1, 0.10)
+                                                border.color: root.contextMenuBorderColor
                                             }
 
                                             SidebarContextMenuItem {
@@ -1182,8 +1184,11 @@ D.ApplicationWindow {
                             MouseArea {
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                acceptedButtons: Qt.NoButton
+                                acceptedButtons: Qt.RightButton
                                 cursorShape: Qt.IBeamCursor
+                                onClicked: function(mouse) {
+                                    titleContextMenu.popup(mouse.x, mouse.y)
+                                }
                             }
 
                             D.Label {
@@ -1197,6 +1202,60 @@ D.ApplicationWindow {
                                 elide: Text.ElideRight
                                 clip: true
                                 verticalAlignment: Text.AlignVCenter
+                            }
+
+                            QQC.Menu {
+                                id: titleContextMenu
+                                topPadding: 5
+                                bottomPadding: 5
+                                leftPadding: 6
+                                rightPadding: 6
+                                onClosed: titleEdit.forceActiveFocus()
+
+                                background: Rectangle {
+                                    implicitWidth: 240
+                                    radius: 8
+                                    antialiasing: true
+                                    color: root.contextMenuColor
+                                    border.width: 1
+                                    border.color: root.contextMenuBorderColor
+                                }
+
+                                QQC.MenuItem {
+                                    text: "复制"
+                                    enabled: titleEdit.selectedText.length > 0
+                                    onTriggered: titleEdit.copy()
+                                }
+
+                                QQC.MenuItem {
+                                    text: "剪切"
+                                    enabled: titleEdit.selectedText.length > 0
+                                    onTriggered: titleEdit.cut()
+                                }
+
+                                QQC.MenuItem {
+                                    text: "粘贴"
+                                    enabled: titleEdit.canPaste
+                                    onTriggered: titleEdit.paste()
+                                }
+
+                                QQC.MenuItem {
+                                    text: "全选"
+                                    enabled: titleEdit.text.length > 0
+                                    onTriggered: titleEdit.selectAll()
+                                }
+
+                                QQC.MenuItem {
+                                    text: "撤销"
+                                    enabled: titleEdit.canUndo
+                                    onTriggered: titleEdit.undo()
+                                }
+
+                                QQC.MenuItem {
+                                    text: "重做"
+                                    enabled: titleEdit.canRedo
+                                    onTriggered: titleEdit.redo()
+                                }
                             }
                         }
 
