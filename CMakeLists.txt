@@ -45,7 +45,7 @@ target_link_libraries(xiaou-todo
 
 install(TARGETS xiaou-todo RUNTIME DESTINATION bin)
 install(FILES xiaou-todo.desktop DESTINATION share/applications)
-set(XIAOU_ICON_SIZES 16 24 32 48 64 96 128 256 512 1024)
+set(XIAOU_ICON_SIZES 16 24 32 48 64 80 96 128 160 256 512 1024)
 foreach(icon_size IN LISTS XIAOU_ICON_SIZES)
     foreach(icon_theme hicolor bloom)
         install(FILES qml/assets/app-icons/xiaou-todo-${icon_size}.png

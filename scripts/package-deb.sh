@@ -20,7 +20,7 @@ mkdir -p "$PKG_DIR" "$DIST_DIR"
 DESTDIR="$PKG_DIR" cmake --install build --prefix /usr >/dev/null
 
 # Keep the desktop identity unambiguous. Do not let stale staging keep the old icon name.
-sed -i 's/^Icon=.*/Icon=xiaou-todo/' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
+sed -i 's|^Icon=.*|Icon=/usr/share/icons/hicolor/96x96/apps/xiaou-todo.png|' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 sed -i 's/^Name=.*/Name=小U待办/' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 
 mkdir -p "$PKG_DIR/DEBIAN"

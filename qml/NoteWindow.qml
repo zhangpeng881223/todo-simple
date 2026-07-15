@@ -19,6 +19,10 @@ Item {
     readonly property color textColor: lightTheme ? "#333333" : "white"
     readonly property color mutedColor: lightTheme ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(1, 1, 1, 0.42)
     readonly property color weakColor: lightTheme ? Qt.rgba(0, 0, 0, 0.30) : Qt.rgba(1, 1, 1, 0.30)
+    readonly property color contextMenuColor: lightTheme ? Qt.rgba(245 / 255, 245 / 255, 245 / 255, 0.88)
+                                                         : Qt.rgba(42 / 255, 42 / 255, 42 / 255, 0.88)
+    readonly property color contextMenuBorderColor: lightTheme ? Qt.rgba(0, 0, 0, 0.08)
+                                                               : Qt.rgba(1, 1, 1, 0.10)
     property string pendingFocusId: ""
     property int pendingFocusIndex: -1
     property int pendingFocusAttempts: 0
@@ -409,9 +413,9 @@ Item {
             height: 28
             radius: 6
             visible: buttonRoot.tooltipText.length > 0 && buttonRoot.hovered && !buttonRoot.tooltipSuppressed
-            color: root.lightTheme ? Qt.rgba(250 / 255, 250 / 255, 250 / 255, 0.96) : Qt.rgba(45 / 255, 45 / 255, 45 / 255, 0.96)
+            color: root.contextMenuColor
             border.width: 1
-            border.color: root.lightTheme ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.14)
+            border.color: root.contextMenuBorderColor
             opacity: visible ? 1 : 0
 
             Text {
