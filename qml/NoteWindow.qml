@@ -492,6 +492,7 @@ Item {
 
             RowLayout {
                 id: header
+                z: 100
                 Layout.fillWidth: true
                 Layout.preferredHeight: 46
                 Layout.leftMargin: 8

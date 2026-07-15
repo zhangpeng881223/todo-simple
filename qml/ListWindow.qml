@@ -1206,6 +1206,7 @@ D.ApplicationWindow {
 
                             QQC.Menu {
                                 id: titleContextMenu
+                                width: 128
                                 topPadding: 5
                                 bottomPadding: 5
                                 leftPadding: 6
@@ -1213,7 +1214,7 @@ D.ApplicationWindow {
                                 onClosed: titleEdit.forceActiveFocus()
 
                                 background: Rectangle {
-                                    implicitWidth: 240
+                                    implicitWidth: 128
                                     radius: 8
                                     antialiasing: true
                                     color: root.contextMenuColor

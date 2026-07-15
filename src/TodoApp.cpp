@@ -500,7 +500,7 @@ TodoApp::TodoApp(QObject *parent)
     m_settings.insert(QStringLiteral("theme"), QStringLiteral("system"));
     m_settings.insert(QStringLiteral("noteTheme"), QStringLiteral("system"));
     m_settings.insert(QStringLiteral("priorityStyle"), QStringLiteral("colorful"));
-    m_settings.insert(QStringLiteral("todosWrapEnabled"), false);
+    m_settings.insert(QStringLiteral("todosWrapEnabled"), true);
     m_settings.insert(QStringLiteral("opacity"), 60);
     m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
     m_settings.insert(QStringLiteral("mainDefaultTodoAlphaLight"), 0.445);
@@ -737,7 +737,7 @@ QVariantList TodoApp::eventsList() const
 QString TodoApp::theme() const { return m_settings.value(QStringLiteral("theme")).toString(QStringLiteral("system")); }
 QString TodoApp::noteTheme() const { return m_settings.value(QStringLiteral("noteTheme")).toString(QStringLiteral("system")); }
 QString TodoApp::priorityStyle() const { return m_settings.value(QStringLiteral("priorityStyle")).toString(QStringLiteral("colorful")); }
-bool TodoApp::todosWrapEnabled() const { return m_settings.value(QStringLiteral("todosWrapEnabled")).toBool(false); }
+bool TodoApp::todosWrapEnabled() const { return m_settings.value(QStringLiteral("todosWrapEnabled")).toBool(true); }
 int TodoApp::opacity() const { return m_settings.value(QStringLiteral("opacity")).toInt(60); }
 QString TodoApp::storagePath() const { return m_dataDir; }
 double TodoApp::mainDefaultTodoAlphaLight() const { return numberSetting(m_settings, QStringLiteral("mainDefaultTodoAlphaLight"), 0.445); }
@@ -2372,8 +2372,6 @@ QString TodoApp::exportData()
 
     QJsonObject bundle;
     bundle.insert(QStringLiteral("notes"), m_notes);
-    bundle.insert(QStringLiteral("events"), m_events);
-    bundle.insert(QStringLiteral("settings"), m_settings);
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly)) {
         return QStringLiteral("导出失败");
@@ -2401,16 +2399,8 @@ QString TodoApp::importData()
         return QStringLiteral("数据包格式不正确");
     }
     m_notes = bundle.value(QStringLiteral("notes")).toArray();
-    m_events = bundle.value(QStringLiteral("events")).toArray();
-    m_settings = bundle.value(QStringLiteral("settings")).toObject(m_settings);
-    m_settings.insert(QStringLiteral("storagePath"), m_dataDir);
-    syncDtkPalette();
     saveNotes();
-    saveEvents();
-    saveSettings();
     emit notesChanged();
-    emit eventsChanged();
-    emit settingsChanged();
     refreshNoteControllers();
     trackTelemetry(QStringLiteral("data_imported"),
                    QStringLiteral("功能点击"),

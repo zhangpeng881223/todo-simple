@@ -1182,14 +1182,6 @@ Item {
                 Item { Layout.fillWidth: true }
             }
 
-            D.Label {
-                Layout.fillWidth: true
-                Layout.topMargin: 12
-                text: "导出文件包含 notes.json、events.json 和 settings.json；导入后会刷新当前窗口。"
-                color: root.mutedColor
-                font.pixelSize: 11
-                wrapMode: Text.WordWrap
-            }
         }
     }
 
