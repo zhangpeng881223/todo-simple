@@ -285,18 +285,43 @@ Item {
         contentItem: Item {
             anchors.fill: parent
 
-            Image {
+            Item {
                 id: navIcon
                 width: 16
                 height: 16
                 x: 16
                 y: Math.round((parent.height - height) / 2)
-                source: "qrc:/assets/settings-" + navButton.iconName + "-"
-                        + (root.activeIndex === navButton.index ? "active" : root.lightTheme ? "dark" : "light") + ".svg"
-                sourceSize.width: 16
-                sourceSize.height: 16
-                fillMode: Image.PreserveAspectFit
-                smooth: true
+                property url iconSource: "qrc:/assets/settings-" + navButton.iconName + "-"
+                                         + (root.activeIndex === navButton.index
+                                            ? "active"
+                                            : root.lightTheme ? "dark" : "light") + ".svg"
+
+                Image {
+                    anchors.fill: parent
+                    source: navIcon.iconSource
+                    sourceSize.width: 16
+                    sourceSize.height: 16
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+
+                Image {
+                    anchors.fill: parent
+                    source: navIcon.iconSource
+                    sourceSize.width: 16
+                    sourceSize.height: 16
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+
+                Image {
+                    anchors.fill: parent
+                    source: navIcon.iconSource
+                    sourceSize.width: 16
+                    sourceSize.height: 16
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
             }
 
             D.Label {
@@ -1016,6 +1041,10 @@ Item {
                 desc: "开启后主窗口和桌面待办里的待办内容都会自动换行"
                 control: D.Switch {
                     checked: app.todosWrapEnabled
+
+                    // DTK's animated switch reads its track from the window palette role.
+                    palette.window: root.lightTheme ? "#d9d9d9" : "#1a1a1a"
+
                     onToggled: {
                         app.updateSetting("todosWrapEnabled", checked)
                         root.notify(checked ? "已允许待办换行" : "已关闭待办换行")

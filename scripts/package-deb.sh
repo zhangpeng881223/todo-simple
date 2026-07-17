@@ -19,8 +19,8 @@ rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR" "$DIST_DIR"
 DESTDIR="$PKG_DIR" cmake --install build --prefix /usr >/dev/null
 
-# Keep the desktop identity unambiguous. Do not let stale staging keep the old icon name.
-sed -i 's|^Icon=.*|Icon=/usr/share/icons/hicolor/96x96/apps/xiaou-todo.png|' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
+# Use the icon theme name so launchers can select the best raster size or scalable SVG.
+sed -i 's|^Icon=.*|Icon=xiaou-todo|' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 sed -i 's/^Name=.*/Name=小U待办/' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 
 mkdir -p "$PKG_DIR/DEBIAN"
@@ -88,12 +88,16 @@ set -e
 cleanup_legacy_launchers() {
     rm -f /usr/share/applications/todo260606.desktop
     rm -f /usr/share/pixmaps/todo260606.png
+    rm -f /usr/share/pixmaps/xiaou-todo.png
+    rm -f /usr/share/pixmaps/xiaou-todo-calendar.png
     rm -f /usr/share/dsg/icons/todo260606.dci
     rm -f /usr/share/dsg/icons/xiaou-todo.dci
     rm -f /usr/share/dsg/icons/xiaou-todo-calendar.dci
-    for icon_dir in /usr/share/icons/hicolor/*x*/apps /usr/share/icons/bloom/apps/*x*; do
+    for icon_dir in /usr/share/icons/hicolor/*x*/apps /usr/share/icons/bloom/*x*/apps /usr/share/icons/bloom/apps/*; do
         [ -d "$icon_dir" ] || continue
         rm -f "$icon_dir/todo260606.png"
+        rm -f "$icon_dir/xiaou-todo.png"
+        rm -f "$icon_dir/xiaou-todo-calendar.png"
     done
     for home_dir in /home/* /root; do
         [ -d "$home_dir" ] || continue

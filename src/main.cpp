@@ -62,16 +62,7 @@ bool notifyRunningInstance(const QString &serverName, const QStringList &argumen
 QIcon productIcon()
 {
     QIcon icon;
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-16.png"), QSize(16, 16));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-24.png"), QSize(24, 24));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-32.png"), QSize(32, 32));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-48.png"), QSize(48, 48));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-64.png"), QSize(64, 64));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-96.png"), QSize(96, 96));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-128.png"), QSize(128, 128));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-256.png"), QSize(256, 256));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-512.png"), QSize(512, 512));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-1024.png"), QSize(1024, 1024));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo.svg"));
     return icon;
 }
 }

@@ -645,7 +645,7 @@ D.ApplicationWindow {
 	                        width: root.sidebarLogoSize
 	                        height: root.sidebarLogoSize
 	                        visible: root.sidebarLogoSize > 0
-	                        source: "qrc:/assets/xiaou-todo-app-icon.png"
+	                        source: "qrc:/assets/app-icons/xiaou-todo.svg"
 	                        sourceSize.width: 1024
 	                        sourceSize.height: 1024
 	                        fillMode: Image.PreserveAspectFit

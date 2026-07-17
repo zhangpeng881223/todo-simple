@@ -150,7 +150,10 @@ private:
     QString summarizeNoteForSource(const QString &noteId, const QString &eventName, const QString &source);
     QString latestCreatedNoteId() const;
     void showLatestCreatedNoteOnDesktop();
+    void showAutostartNoteWindows();
     void showDefaultLaunchWindows();
+    void handleInitialLaunch(const QStringList &args, int probeAttempt = 0);
+    QString currentDdeLaunchType(bool *managedLaunch = nullptr) const;
     void loadData();
     void saveNotes() const;
     void saveEvents() const;

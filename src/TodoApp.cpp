@@ -38,6 +38,7 @@
 #include <QProcess>
 #include <QDebug>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -63,8 +64,8 @@
 namespace {
 constexpr int MaxNotes = 999;
 constexpr int MaxPromptLength = 12000;
-const char ProductIconPath[] = ":/assets/xiaou-todo-app-icon.png";
-const char ProductIconLargePath[] = ":/assets/app-icons/xiaou-todo-1024.png";
+const char ProductIconPath[] = ":/assets/app-icons/xiaou-todo.svg";
+const char ProductIconLargePath[] = ":/assets/app-icons/xiaou-todo.svg";
 const char DefaultMainWallpaperPath[] = "qrc:/assets/default-main-wallpaper.jpg";
 constexpr double DefaultWallpaperWindowOpacity = 0.405;
 constexpr double DefaultWallpaperRightPanelOpacity = 0.70;
@@ -371,16 +372,7 @@ QIcon aboutProductIcon()
 QIcon productIcon()
 {
     QIcon icon;
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-16.png"), QSize(16, 16));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-24.png"), QSize(24, 24));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-32.png"), QSize(32, 32));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-48.png"), QSize(48, 48));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-64.png"), QSize(64, 64));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-96.png"), QSize(96, 96));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-128.png"), QSize(128, 128));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-256.png"), QSize(256, 256));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-512.png"), QSize(512, 512));
-    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo-1024.png"), QSize(1024, 1024));
+    icon.addFile(QStringLiteral(":/assets/app-icons/xiaou-todo.svg"));
     return icon;
 }
 
@@ -556,6 +548,40 @@ void TodoApp::initialize()
     setupLauncherVisibilityTracking();
 
     const QStringList args = QCoreApplication::arguments();
+    handleInitialLaunch(args);
+}
+
+void TodoApp::handleInitialLaunch(const QStringList &args, int probeAttempt)
+{
+    if (args.contains(QStringLiteral("--autostart"))) {
+        QTimer::singleShot(0, this, [this]() { showAutostartNoteWindows(); });
+        return;
+    }
+
+    const bool hasExplicitWindowArg = args.contains(QStringLiteral("--show-all")) ||
+                                      args.contains(QStringLiteral("--list")) ||
+                                      args.contains(QStringLiteral("--effects")) ||
+                                      args.contains(QStringLiteral("--settings"));
+    if (hasExplicitWindowArg) {
+        handleExternalLaunch(args);
+        return;
+    }
+
+    bool managedLaunch = false;
+    const QString launchType = currentDdeLaunchType(&managedLaunch);
+    if (launchType == QStringLiteral("dde-application-manager-autostart")) {
+        QTimer::singleShot(0, this, [this]() { showAutostartNoteWindows(); });
+        return;
+    }
+
+    constexpr int MaxLaunchTypeProbeAttempts = 10;
+    if (managedLaunch && launchType.isEmpty() && probeAttempt < MaxLaunchTypeProbeAttempts) {
+        QTimer::singleShot(100, this, [this, args, probeAttempt]() {
+            handleInitialLaunch(args, probeAttempt + 1);
+        });
+        return;
+    }
+
     handleExternalLaunch(args);
 }
 
@@ -596,6 +622,10 @@ void TodoApp::handleLauncherVisibleChanged(bool visible)
 void TodoApp::handleExternalLaunch(const QStringList &args)
 {
     QTimer::singleShot(0, this, [this, args]() {
+        if (args.contains(QStringLiteral("--autostart"))) {
+            showAutostartNoteWindows();
+            return;
+        }
         if (args.contains(QStringLiteral("--show-all"))) {
             showDefaultLaunchWindows();
             // showCalendarWindow();
@@ -1398,6 +1428,67 @@ void TodoApp::showLatestCreatedNoteOnDesktop()
         return;
     }
     openNoteWithLayer(noteId, QString());
+}
+
+void TodoApp::showAutostartNoteWindows()
+{
+    QStringList visibleNoteIds;
+    for (const QJsonValue &value : std::as_const(m_notes)) {
+        const QJsonObject note = value.toObject();
+        const QString noteId = note.value(QStringLiteral("id")).toVariant().toString();
+        if (!noteId.isEmpty() && note.value(QStringLiteral("visible")).toBool(false)) {
+            visibleNoteIds.append(noteId);
+        }
+    }
+
+    if (visibleNoteIds.isEmpty()) {
+        showLatestCreatedNoteOnDesktop();
+        return;
+    }
+
+    for (const QString &noteId : std::as_const(visibleNoteIds)) {
+        openNoteWithLayer(noteId, QString());
+    }
+}
+
+QString TodoApp::currentDdeLaunchType(bool *managedLaunch) const
+{
+    if (managedLaunch) {
+        *managedLaunch = false;
+    }
+
+    QFile cgroupFile(QStringLiteral("/proc/self/cgroup"));
+    if (!cgroupFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return QString();
+    }
+
+    const QString cgroup = QString::fromUtf8(cgroupFile.readAll());
+    const QRegularExpressionMatch runIdMatch =
+        QRegularExpression(QStringLiteral("@([0-9a-fA-F]{32})\\.service(?:$|\\n)"))
+            .match(cgroup);
+    if (!runIdMatch.hasMatch()) {
+        return QString();
+    }
+    if (managedLaunch) {
+        *managedLaunch = true;
+    }
+
+    const QString instancePath = QStringLiteral("/org/desktopspec/ApplicationManager1/xiaou_2dtodo/%1")
+                                     .arg(runIdMatch.captured(1).toLower());
+    QDBusMessage message = QDBusMessage::createMethodCall(
+        QStringLiteral("org.desktopspec.ApplicationManager1"),
+        instancePath,
+        QStringLiteral("org.freedesktop.DBus.Properties"),
+        QStringLiteral("Get"));
+    message << QStringLiteral("org.desktopspec.ApplicationManager1.Instance")
+            << QStringLiteral("LaunchType");
+
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+        return QString();
+    }
+
+    return reply.arguments().constFirst().value<QDBusVariant>().variant().toString();
 }
 
 void TodoApp::showDefaultLaunchWindows()
@@ -2742,7 +2833,6 @@ void TodoApp::ensureSeedData()
     const QPoint pos = defaultNotePosition();
     QJsonArray todos;
     const QList<QPair<QString, QString>> tips = {
-        {QStringLiteral("单击托盘图标新增待办窗口"), QStringLiteral("orange")},
         {QStringLiteral("善用回车快速创建多个待办"), QStringLiteral("orange")},
         {QStringLiteral("鼠标悬浮待办可调整优先级"), QStringLiteral("blue")},
         {QStringLiteral("支持拖拽待办排序"), QStringLiteral("green")},
@@ -2750,9 +2840,10 @@ void TodoApp::ensureSeedData()
         {QStringLiteral("设置中支持黑色/白色卡片"), QStringLiteral("blue")},
         {QStringLiteral("设置中支持调节透明度"), QStringLiteral("gray")},
         {QStringLiteral("支持导入/导出，换机无忧"), QStringLiteral("green")},
-        {QStringLiteral("!  AI总结日报/周报/月报"), QStringLiteral("red")},
-        {QStringLiteral("！设置中可切换壁纸"), QStringLiteral("red")},
-        {QStringLiteral("！一键同步到日历日程"), QStringLiteral("red")}
+        {QStringLiteral("! 待办支持钉在壁纸或强制置顶"), QStringLiteral("red")},
+        {QStringLiteral("!  支持AI总结日报/周报/月报"), QStringLiteral("red")},
+        {QStringLiteral("！设置中支持切换壁纸"), QStringLiteral("red")},
+        {QStringLiteral("！支持一键同步到日历日程"), QStringLiteral("red")}
     };
     int i = 0;
     for (const auto &tip : tips) {

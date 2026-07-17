@@ -45,24 +45,13 @@ target_link_libraries(xiaou-todo
 
 install(TARGETS xiaou-todo RUNTIME DESTINATION bin)
 install(FILES xiaou-todo.desktop DESTINATION share/applications)
-set(XIAOU_ICON_SIZES 16 24 32 48 64 80 96 128 160 256 512 1024)
-foreach(icon_size IN LISTS XIAOU_ICON_SIZES)
-    foreach(icon_theme hicolor bloom)
-        install(FILES qml/assets/app-icons/xiaou-todo-${icon_size}.png
-            DESTINATION share/icons/${icon_theme}/${icon_size}x${icon_size}/apps
-            RENAME xiaou-todo.png
-        )
-        install(FILES qml/assets/app-icons/xiaou-todo-${icon_size}.png
-            DESTINATION share/icons/${icon_theme}/${icon_size}x${icon_size}/apps
-            RENAME xiaou-todo-calendar.png
-        )
-    endforeach()
+foreach(icon_theme hicolor bloom)
+    install(FILES qml/assets/app-icons/xiaou-todo.svg
+        DESTINATION share/icons/${icon_theme}/scalable/apps
+        RENAME xiaou-todo.svg
+    )
+    install(FILES qml/assets/app-icons/xiaou-todo.svg
+        DESTINATION share/icons/${icon_theme}/scalable/apps
+        RENAME xiaou-todo-calendar.svg
+    )
 endforeach()
-install(FILES qml/assets/app-icons/xiaou-todo-128.png
-    DESTINATION share/pixmaps
-    RENAME xiaou-todo.png
-)
-install(FILES qml/assets/app-icons/xiaou-todo-128.png
-    DESTINATION share/pixmaps
-    RENAME xiaou-todo-calendar.png
-)
