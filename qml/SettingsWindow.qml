@@ -1136,7 +1136,7 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
-                D.Button {
+                SettingsSecondaryButton {
                     text: "恢复默认"
                     onClicked: {
                         app.resetSummaryTemplate(root.aiScope)
@@ -1145,7 +1145,7 @@ Item {
                     }
                 }
 
-                D.Button {
+                SettingsSecondaryButton {
                     text: "取消"
                     onClicked: root.loadAiTemplate(root.aiScope)
                 }
