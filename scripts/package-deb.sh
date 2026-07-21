@@ -36,7 +36,7 @@ Maintainer: zhangpeng <zhangpeng@example.com>
 Replaces: todo260606
 Conflicts: todo260606
 Provides: todo260606
-Depends: libc6 (>= 2.34), libdtk6gui (>= 6.7.42), libdtk6widget (>= 6.7.42), libgcc-s1 (>= 3.0), libqt6core6 (>= 6.8.0), libqt6dbus6 (>= 6.1.2), libqt6gui6 (>= 6.1.2), libqt6network6 (>= 6.1.2), libqt6qml6 (>= 6.6.0), libqt6quick6 (>= 6.6.0), libqt6quickcontrols2-6 (>= 6.6.0), libqt6widgets6 (>= 6.3.0), libstdc++6 (>= 5), libdtk6declarative, qml6-module-qtquick, qml6-module-qtquick-window, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-dialogs, qml6-module-qtquick-particles, qml6-module-qt5compat-graphicaleffects, qml6-module-qtquick-controls2-styles-chameleon, qt6-qpa-plugins
+Depends: libc6 (>= 2.34), libdtk6gui (>= 6.7.42), libdtk6widget (>= 6.7.42), libgcc-s1 (>= 3.0), libqt6core6 (>= 6.8.0), libqt6dbus6 (>= 6.1.2), libqt6gui6 (>= 6.1.2), libqt6network6 (>= 6.1.2), libqt6qml6 (>= 6.6.0), libqt6quick6 (>= 6.6.0), libqt6quickcontrols2-6 (>= 6.6.0), libqt6widgets6 (>= 6.3.0), libstdc++6 (>= 5), libdtk6declarative, qml6-module-qtquick, qml6-module-qtquick-window, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-dialogs, qml6-module-qtquick-particles, qml6-module-qt5compat-graphicaleffects, qml6-module-qtquick-controls2-styles-chameleon, qt6-qpa-plugins, xdotool
 Description: 小U待办
  小U待办是一个面向 deepin/UOS 的桌面待办应用。
 CONTROL

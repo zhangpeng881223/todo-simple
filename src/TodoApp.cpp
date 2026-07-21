@@ -7,16 +7,20 @@
 #include "TelemetryService.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QCursor>
 #include <QDate>
 #include <QDateTime>
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDBusMessage>
+#include <QDBusReply>
 #include <QDBusVariant>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -44,6 +48,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScreen>
+#include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QSet>
@@ -199,10 +204,9 @@ Qt::WindowFlags baseViewFlags(bool resizable)
 Qt::WindowFlags noteViewFlags(const QString &layer, bool topLayerSuspended = false)
 {
     const QString normalized = normalizedWindowLayer(layer);
-    // Desktop notes must be utility windows before their first map. DDE's dock
-    // classifies a normal window at map time and keeps a taskbar entry after
-    // the main window is hidden.
-    Qt::WindowFlags flags = baseViewFlags(true) | Qt::Tool;
+    // Keep desktop notes as independent normal windows. Qt::Tool makes DDE
+    // stack them above the application's main window even in the normal layer.
+    Qt::WindowFlags flags = baseViewFlags(true);
     if (normalized == QStringLiteral("bottom")) {
         flags |= Qt::WindowStaysOnBottomHint;
     } else if (normalized == QStringLiteral("top") && !topLayerSuspended) {
@@ -282,7 +286,7 @@ void applySkipTaskbarState(QWindow *window)
                     mergedStates.size());
 
     const Atom wmWindowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
-    const Atom windowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    const Atom windowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
     XChangeProperty(display,
                     xWindow,
                     wmWindowType,
@@ -1590,6 +1594,9 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     m_noteViews.insert(noteId, view);
     m_noteControllers.insert(noteId, controller);
     applyNoteWindowLayer(noteId, false);
+    // Publish skip-taskbar state before the first map so DDE never creates a
+    // dock entry for this otherwise-normal desktop note window.
+    scheduleSkipTaskbarState(view);
     view->show();
     scheduleWindowIconPublish(view);
     scheduleSkipTaskbarState(view);
@@ -2962,19 +2969,18 @@ QPoint TodoApp::defaultNotePosition(int xOffset, int y) const
 
 void TodoApp::showUosAiAssistant() const
 {
-    QProcess launchProcess;
-    launchProcess.start(QStringLiteral("dbus-send"), {
-        QStringLiteral("--session"),
-        QStringLiteral("--dest=com.deepin.copilot"),
-        QStringLiteral("--print-reply"),
+    QDBusMessage launchMessage = QDBusMessage::createMethodCall(
+        QStringLiteral("com.deepin.copilot"),
         QStringLiteral("/com/deepin/copilot"),
-        QStringLiteral("com.deepin.copilot.launchChatPage")
-    });
+        QStringLiteral("com.deepin.copilot"),
+        QStringLiteral("launchChatPage"));
+    const QDBusMessage launchReply = QDBusConnection::sessionBus().call(
+        launchMessage, QDBus::Block, 1500);
 
-    launchProcess.waitForFinished(1500);
-
-    if (!QProcess::startDetached(QStringLiteral("/usr/bin/uos-ai-assistant"), {QStringLiteral("--chat")})) {
-        QProcess::startDetached(QStringLiteral("gtk-launch"), {QStringLiteral("uos-ai-assistant")});
+    if (launchReply.type() != QDBusMessage::ReplyMessage) {
+        if (!QProcess::startDetached(QStringLiteral("/usr/bin/uos-ai-assistant"), {QStringLiteral("--chat")})) {
+            QProcess::startDetached(QStringLiteral("gtk-launch"), {QStringLiteral("uos-ai-assistant")});
+        }
     }
 
     const QString activateScript = QStringLiteral(
@@ -2996,34 +3002,123 @@ void TodoApp::showUosAiAssistant() const
 
 QString TodoApp::sendPromptToUosAi(const QString &prompt) const
 {
+    static bool promptDeliveryInProgress = false;
+    if (promptDeliveryInProgress) {
+        return QStringLiteral("正在发送到小U同学，请稍候");
+    }
+    QScopedValueRollback<bool> deliveryGuard(promptDeliveryInProgress, true);
+
     const QString truncated = prompt.size() > MaxPromptLength
         ? prompt.left(MaxPromptLength) + QStringLiteral("\n\n（内容较多，已自动截断，请基于以上内容总结。）")
         : prompt;
 
-    const auto sendPrompt = [&truncated]() {
-        QProcess process;
-        process.start(QStringLiteral("dbus-send"), {
-            QStringLiteral("--session"),
-            QStringLiteral("--dest=com.deepin.copilot"),
-            QStringLiteral("--print-reply"),
+    bool assistantWasRunning = false;
+    if (QDBusConnectionInterface *busInterface = QDBusConnection::sessionBus().interface()) {
+        const QDBusReply<bool> registered = busInterface->isServiceRegistered(
+            QStringLiteral("com.deepin.copilot"));
+        assistantWasRunning = registered.isValid() && registered.value();
+    }
+
+    const auto sendThroughNativeInterface = [&truncated]() {
+        QDBusMessage message = QDBusMessage::createMethodCall(
+            QStringLiteral("com.deepin.copilot"),
             QStringLiteral("/org/deepin/copilot/chat"),
-            QStringLiteral("org.deepin.copilot.chat.dockInputPrompt"),
-            QStringLiteral("string:%1").arg(truncated)
-        });
-        return process.waitForFinished(10000)
-            && process.exitStatus() == QProcess::NormalExit
-            && process.exitCode() == 0;
+            QStringLiteral("org.deepin.copilot.chat"),
+            QStringLiteral("dockInputPrompt"));
+        message << truncated;
+
+        const QDBusMessage reply = QDBusConnection::sessionBus().call(message, QDBus::Block, 3000);
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            return true;
+        }
+
+        qWarning() << "UOS AI native prompt interface unavailable:"
+                   << reply.errorName() << reply.errorMessage();
+        return false;
     };
 
-    bool sent = sendPrompt();
-    if (!sent) {
+    if (sendThroughNativeInterface()) {
         showUosAiAssistant();
-        sent = sendPrompt();
+        return QStringLiteral("已发送到 UOS AI 助手");
     }
-    if (!sent) {
-        return QStringLiteral("发送到 UOS AI 助手失败，请确认 UOS AI 已启动");
-    }
+
+    // UOS AI 3.0.1 advertises inputPrompt on D-Bus, but that method is a no-op.
+    // Use the visible chat input as a compatibility path on the current X11 release.
     showUosAiAssistant();
+
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (!clipboard) {
+        return QStringLiteral("发送到小U同学失败，请稍后重试");
+    }
+
+    const QString previousClipboard = clipboard->text(QClipboard::Clipboard);
+    clipboard->setText(truncated, QClipboard::Clipboard);
+
+    const QString automationScript = QStringLiteral(
+        "cold_start=%1; "
+        "command -v xdotool >/dev/null 2>&1 || exit 2; "
+        "for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do "
+        "best_id=; best_area=0; best_x=0; best_y=0; best_w=0; best_h=0; "
+        "for id in $(xdotool search --onlyvisible --class uos-ai-assistant 2>/dev/null); do "
+        "eval $(xdotool getwindowgeometry --shell \"$id\" 2>/dev/null) || continue; "
+        "area=$((WIDTH * HEIGHT)); "
+        "if [ \"$WIDTH\" -ge 600 ] && [ \"$HEIGHT\" -ge 450 ] && [ \"$area\" -gt \"$best_area\" ]; then "
+        "best_id=$id; best_area=$area; best_x=$X; best_y=$Y; best_w=$WIDTH; best_h=$HEIGHT; "
+        "fi; "
+        "done; "
+        "if [ -n \"$best_id\" ]; then "
+        "if [ \"$cold_start\" -eq 1 ]; then sleep 3.2; fi; "
+        "eval $(xdotool getwindowgeometry --shell \"$best_id\" 2>/dev/null) || exit 4; "
+        "best_x=$X; best_y=$Y; best_w=$WIDTH; best_h=$HEIGHT; "
+        "xdotool windowraise \"$best_id\" windowactivate --sync \"$best_id\" 2>/dev/null || true; "
+        "sleep 0.2; "
+        "input_x=$((best_x + best_w / 2)); input_y=$((best_y + best_h - 105)); "
+        "xdotool mousemove --sync \"$input_x\" \"$input_y\" click 1; "
+        "sleep 0.15; "
+        "xdotool key --clearmodifiers ctrl+a; "
+        "xdotool key --clearmodifiers ctrl+v; "
+        "sleep 0.2; "
+        "xdotool key --clearmodifiers Return; "
+        "sleep 0.4; "
+        "exit 0; "
+        "fi; "
+        "sleep 0.25; "
+        "done; "
+        "exit 3").arg(assistantWasRunning ? 0 : 1);
+
+    QProcess automation;
+    QEventLoop waitLoop;
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+    QObject::connect(&automation,
+                     qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                     &waitLoop,
+                     &QEventLoop::quit);
+    QObject::connect(&timeoutTimer, &QTimer::timeout, &waitLoop, &QEventLoop::quit);
+    automation.start(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), automationScript});
+    timeoutTimer.start(12000);
+    waitLoop.exec();
+    const bool finished = automation.state() == QProcess::NotRunning;
+    const bool sent = finished
+        && automation.exitStatus() == QProcess::NormalExit
+        && automation.exitCode() == 0;
+
+    if (clipboard->text(QClipboard::Clipboard) == truncated) {
+        clipboard->setText(previousClipboard, QClipboard::Clipboard);
+    }
+
+    if (!sent) {
+        if (!finished) {
+            automation.kill();
+            automation.waitForFinished(500);
+        }
+        qWarning() << "UOS AI compatibility prompt delivery failed:"
+                   << automation.exitCode() << automation.errorString()
+                   << automation.readAllStandardError();
+        return QStringLiteral("发送到小U同学失败，请稍后重试");
+    }
+
+    qInfo() << "UOS AI compatibility prompt delivered through visible chat input";
     return QStringLiteral("已发送到 UOS AI 助手");
 }
 
