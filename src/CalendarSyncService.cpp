@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDebug>
@@ -10,6 +11,7 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 #include <QRegularExpression>
+#include <QThread>
 #include <QUuid>
 
 namespace {
@@ -290,7 +292,17 @@ QString CalendarSyncService::newUid()
 QList<CalendarSyncService::ScheduleType> CalendarSyncService::scheduleTypes() const
 {
     bool ok = false;
-    const QString raw = callStringMethod(QStringLiteral("getScheduleTypeList"), QString(), &ok);
+    QString raw;
+    constexpr int MaxAttempts = 5;
+    for (int attempt = 0; attempt < MaxAttempts; ++attempt) {
+        raw = callStringMethod(QStringLiteral("getScheduleTypeList"), QString(), &ok);
+        if (ok && !raw.isEmpty()) {
+            break;
+        }
+        if (attempt + 1 < MaxAttempts) {
+            QThread::msleep(200);
+        }
+    }
     if (!ok || raw.isEmpty()) {
         return {};
     }
@@ -383,22 +395,41 @@ bool CalendarSyncService::callBoolMethod(const QString &method, const QString &p
 
 bool CalendarSyncService::hasCalendarService(QString *error) const
 {
-    if (!QDBusConnection::sessionBus().isConnected()) {
+    const QDBusConnection bus = QDBusConnection::sessionBus();
+    if (!bus.isConnected()) {
         if (error) {
             *error = QStringLiteral("DBus session bus 未连接");
         }
         return false;
     }
 
-    QDBusInterface iface(QString::fromLatin1(CalendarService),
-                         QString::fromLatin1(CalendarObjectPath),
-                         QString::fromLatin1(CalendarInterface),
-                         QDBusConnection::sessionBus());
-    if (!iface.isValid()) {
-        if (error) {
-            *error = QDBusConnection::sessionBus().lastError().message();
+    QString lastError;
+    if (QDBusConnectionInterface *busInterface = bus.interface()) {
+        const QDBusReply<void> startReply = busInterface->startService(QString::fromLatin1(CalendarService));
+        if (!startReply.isValid()) {
+            lastError = startReply.error().message();
         }
-        return false;
     }
-    return true;
+
+    constexpr int MaxAttempts = 6;
+    for (int attempt = 0; attempt < MaxAttempts; ++attempt) {
+        QDBusInterface iface(QString::fromLatin1(CalendarService),
+                             QString::fromLatin1(CalendarObjectPath),
+                             QString::fromLatin1(CalendarInterface),
+                             bus);
+        if (iface.isValid()) {
+            return true;
+        }
+        if (!iface.lastError().message().isEmpty()) {
+            lastError = iface.lastError().message();
+        }
+        if (attempt + 1 < MaxAttempts) {
+            QThread::msleep(200);
+        }
+    }
+
+    if (error) {
+        *error = lastError.isEmpty() ? bus.lastError().message() : lastError;
+    }
+    return false;
 }

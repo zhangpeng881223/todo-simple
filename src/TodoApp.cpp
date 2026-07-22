@@ -1366,7 +1366,7 @@ void TodoApp::moveNoteTodoById(const QString &noteId, const QString &todoId, int
 
 QString TodoApp::createNewNote()
 {
-    return createNewNote(false);
+    return createNewNote(true);
 }
 
 QString TodoApp::createNewNote(bool discardIfEmptyOnHide)
