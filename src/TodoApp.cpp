@@ -1131,6 +1131,11 @@ QString TodoApp::summarizeNoteForSource(const QString &noteId, const QString &ev
 
 QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
 {
+    return syncNoteTodosToSystemCalendarOnDate(noteId, QString());
+}
+
+QString TodoApp::syncNoteTodosToSystemCalendarOnDate(const QString &noteId, const QString &date)
+{
     if (noteId.isEmpty()) {
         return QStringLiteral("未找到待办窗口");
     }
@@ -1140,8 +1145,16 @@ QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
         return QStringLiteral("未找到待办窗口");
     }
 
+    QDate selectedDate;
+    if (!date.trimmed().isEmpty()) {
+        selectedDate = QDate::fromString(date.trimmed(), Qt::ISODate);
+        if (!selectedDate.isValid()) {
+            return QStringLiteral("请选择有效的同步日期");
+        }
+    }
+
     CalendarSyncService service;
-    const CalendarSyncService::SyncResult result = service.syncNoteTodos(note);
+    const CalendarSyncService::SyncResult result = service.syncNoteTodos(note, selectedDate);
     for (const QString &error : result.errors) {
         qWarning() << "Calendar sync:" << error;
     }
@@ -1163,6 +1176,8 @@ QString TodoApp::syncNoteTodosToSystemCalendar(const QString &noteId)
 
     QJsonObject properties;
     properties.insert(QStringLiteral("changedTodos"), result.changedTodos);
+    properties.insert(QStringLiteral("selectedDate"),
+                      selectedDate.isValid() ? selectedDate.toString(Qt::ISODate) : QString());
     properties.insert(QStringLiteral("errorCount"), result.errors.size());
     properties.insert(QStringLiteral("todoCount"), note.value(QStringLiteral("todos")).toArray().size());
     trackTelemetry(QStringLiteral("calendar_sync"),

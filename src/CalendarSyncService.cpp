@@ -81,7 +81,8 @@ void collectScheduleTypes(const QJsonValue &value, QList<CalendarSyncService::Sc
 }
 }
 
-CalendarSyncService::SyncResult CalendarSyncService::syncNoteTodos(const QJsonObject &note) const
+CalendarSyncService::SyncResult CalendarSyncService::syncNoteTodos(const QJsonObject &note,
+                                                                  const QDate &selectedDate) const
 {
     SyncResult result;
     result.todos = note.value(QStringLiteral("todos")).toArray();
@@ -104,7 +105,7 @@ CalendarSyncService::SyncResult CalendarSyncService::syncNoteTodos(const QJsonOb
 
     const QString noteId = jsonString(note, QStringLiteral("id"));
     const QString noteTitle = note.value(QStringLiteral("title")).toString(QStringLiteral("无标题"));
-    const QDate targetDate = noteDate(note);
+    const QDate targetDate = selectedDate.isValid() ? selectedDate : noteDate(note);
 
     int eligible = 0;
     for (int i = 0; i < result.todos.size(); ++i) {

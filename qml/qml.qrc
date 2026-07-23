@@ -81,6 +81,7 @@
         <!-- <file>EventEditorWindow.qml</file> -->
         <file>EffectOverlayWindow.qml</file>
         <file>EffectsTestWindow.qml</file>
+        <file>SyncDateDialog.qml</file>
         <file>ListWindow.qml</file>
         <file>NoteWindow.qml</file>
         <file>SettingsWindow.qml</file>

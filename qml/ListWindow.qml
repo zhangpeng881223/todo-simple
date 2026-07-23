@@ -133,6 +133,11 @@ D.ApplicationWindow {
         }
     }
 
+    function chooseCalendarSyncDate(noteId) {
+        if (!noteId) return
+        syncDateDialog.openForNote(noteId)
+    }
+
     function dtkThemeType() {
         if (app.theme === "system") return D.ApplicationHelper.UnknownType
         return root.lightTheme ? D.ApplicationHelper.LightType : D.ApplicationHelper.DarkType
@@ -926,7 +931,7 @@ D.ApplicationWindow {
                                             SidebarContextMenuItem {
                                                 text: "同步到系统日历"
                                                 iconSource: "qrc:/assets/toolbar-calendar-" + root.iconTone + ".svg"
-                                                onTriggered: root.notify(app.syncNoteTodosToSystemCalendar(modelData.id))
+                                                onTriggered: root.chooseCalendarSyncDate(modelData.id)
                                             }
 
                                             SidebarContextMenuItem {
@@ -1309,7 +1314,7 @@ D.ApplicationWindow {
                                     iconSource: "qrc:/assets/toolbar-calendar-" + root.iconTone + ".svg"
                                     hoverIconSource: "qrc:/assets/toolbar-calendar-accent.svg"
                                     activeIconSource: "qrc:/assets/toolbar-calendar-accent.svg"
-                                    onClicked: if (detailPane.note) root.notify(app.syncNoteTodosToSystemCalendar(detailPane.note.id))
+                                    onClicked: if (detailPane.note) root.chooseCalendarSyncDate(detailPane.note.id)
                                 }
 
                                 ActionButton {
@@ -2011,6 +2016,15 @@ D.ApplicationWindow {
                 root.committingTodoMove = false
                 root.syncDetailTodos(false)
             })
+        }
+    }
+
+    SyncDateDialog {
+        id: syncDateDialog
+        appObject: app
+        lightTheme: root.lightTheme
+        onSyncCompleted: function(message) {
+            root.notify(message)
         }
     }
 

@@ -28,7 +28,7 @@ public:
         int isDeleted = 0;
     };
 
-    SyncResult syncNoteTodos(const QJsonObject &note) const;
+    SyncResult syncNoteTodos(const QJsonObject &note, const QDate &selectedDate = QDate()) const;
 
 private:
     static QDate noteDate(const QJsonObject &note);

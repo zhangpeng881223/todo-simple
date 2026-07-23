@@ -91,6 +91,8 @@ public:
     Q_INVOKABLE QString summarizeNote(const QString &noteId);
     QString summarizeDesktopNote(const QString &noteId);
     Q_INVOKABLE QString syncNoteTodosToSystemCalendar(const QString &noteId);
+    Q_INVOKABLE QString syncNoteTodosToSystemCalendarOnDate(const QString &noteId,
+                                                            const QString &date);
     Q_INVOKABLE QString addTodoToNote(const QString &noteId, const QString &text);
     Q_INVOKABLE void commitNoteTodoText(const QString &noteId, const QString &todoId, const QString &text);
     Q_INVOKABLE void toggleNoteTodo(const QString &noteId, const QString &todoId);
