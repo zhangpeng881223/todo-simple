@@ -55,6 +55,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QWindow>
+#include <QXmlStreamReader>
 #include <DAboutDialog>
 #include <DGuiApplicationHelper>
 #include <DLabel>
@@ -65,6 +66,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
+#include <time.h>
 
 namespace {
 constexpr int MaxNotes = 999;
@@ -88,6 +90,24 @@ constexpr double DarkThemeWallpaperBlur = 0.70;
 constexpr int DarkThemeMainAppearanceVersion = 4;
 constexpr int TelemetryHeartbeatIntervalMs = 10 * 60 * 1000;
 const char DiscardIfEmptyOnHideKey[] = "discardIfEmptyOnHide";
+
+QString encodeApplicationObjectName(const QString &applicationId)
+{
+    QString encoded;
+    const QByteArray bytes = applicationId.toUtf8();
+    encoded.reserve(bytes.size());
+    for (const unsigned char byte : bytes) {
+        if ((byte >= 'a' && byte <= 'z') ||
+            (byte >= 'A' && byte <= 'Z') ||
+            (byte >= '0' && byte <= '9')) {
+            encoded.append(QChar(byte));
+            continue;
+        }
+        encoded.append(QLatin1Char('_'));
+        encoded.append(QString::number(byte, 16).rightJustified(2, QLatin1Char('0')));
+    }
+    return encoded;
+}
 const char DiscardIfEmptyOnHideTitleKey[] = "discardIfEmptyOnHideTitle";
 
 bool isCoreTelemetryEvent(const QString &eventName, const QString &eventType)
@@ -557,7 +577,12 @@ void TodoApp::initialize()
 
 void TodoApp::handleInitialLaunch(const QStringList &args, int probeAttempt)
 {
+    if (probeAttempt == 0) {
+        qInfo().noquote() << "Startup routing: arguments =" << args.join(QLatin1Char(' '));
+    }
+
     if (args.contains(QStringLiteral("--autostart"))) {
+        qInfo() << "Startup routing: mode = autostart (explicit argument)";
         QTimer::singleShot(0, this, [this]() { showAutostartNoteWindows(); });
         return;
     }
@@ -567,13 +592,17 @@ void TodoApp::handleInitialLaunch(const QStringList &args, int probeAttempt)
                                       args.contains(QStringLiteral("--effects")) ||
                                       args.contains(QStringLiteral("--settings"));
     if (hasExplicitWindowArg) {
+        qInfo() << "Startup routing: mode = explicit window request";
         handleExternalLaunch(args);
         return;
     }
 
     bool managedLaunch = false;
-    const QString launchType = currentDdeLaunchType(&managedLaunch);
-    if (launchType == QStringLiteral("dde-application-manager-autostart")) {
+    QString instancePath;
+    const QString launchType = currentDdeLaunchType(&managedLaunch, &instancePath);
+    if (launchType.contains(QStringLiteral("autostart"), Qt::CaseInsensitive)) {
+        qInfo().noquote() << "Startup routing: mode = autostart, launchType =" << launchType
+                          << ", instance =" << instancePath;
         QTimer::singleShot(0, this, [this]() { showAutostartNoteWindows(); });
         return;
     }
@@ -586,6 +615,20 @@ void TodoApp::handleInitialLaunch(const QStringList &args, int probeAttempt)
         return;
     }
 
+    QString autostartDiagnostic;
+    if (managedLaunch &&
+        (launchType.isEmpty() || launchType == QStringLiteral("unknown")) &&
+        isLikelyDdeAutostartLaunch(&autostartDiagnostic)) {
+        qInfo().noquote() << "Startup routing: mode = autostart (DDE timing fallback),"
+                          << autostartDiagnostic;
+        QTimer::singleShot(0, this, [this]() { showAutostartNoteWindows(); });
+        return;
+    }
+
+    qInfo().noquote() << "Startup routing: mode = normal, managed =" << managedLaunch
+                      << ", launchType =" << (launchType.isEmpty() ? QStringLiteral("<empty>") : launchType)
+                      << ", instance =" << (instancePath.isEmpty() ? QStringLiteral("<unresolved>") : instancePath)
+                      << ", autostartFallback =" << autostartDiagnostic;
     handleExternalLaunch(args);
 }
 
@@ -625,8 +668,10 @@ void TodoApp::handleLauncherVisibleChanged(bool visible)
 
 void TodoApp::handleExternalLaunch(const QStringList &args)
 {
+    qInfo().noquote() << "External launch routing: arguments =" << args.join(QLatin1Char(' '));
     QTimer::singleShot(0, this, [this, args]() {
         if (args.contains(QStringLiteral("--autostart"))) {
+            qInfo() << "External launch routing: mode = autostart";
             showAutostartNoteWindows();
             return;
         }
@@ -640,6 +685,7 @@ void TodoApp::handleExternalLaunch(const QStringList &args)
                                           args.contains(QStringLiteral("--effects")) ||
                                           args.contains(QStringLiteral("--settings"));
         if (!hasExplicitWindowArg) {
+            qInfo() << "External launch routing: mode = normal";
             showDefaultLaunchWindows();
             return;
         }
@@ -1461,19 +1507,24 @@ void TodoApp::showAutostartNoteWindows()
     }
 
     if (visibleNoteIds.isEmpty()) {
+        qInfo() << "Autostart restore: no visible notes, opening the latest created note only";
         showLatestCreatedNoteOnDesktop();
         return;
     }
 
+    qInfo() << "Autostart restore: opening" << visibleNoteIds.size() << "previously visible note window(s)";
     for (const QString &noteId : std::as_const(visibleNoteIds)) {
         openNoteWithLayer(noteId, QString());
     }
 }
 
-QString TodoApp::currentDdeLaunchType(bool *managedLaunch) const
+QString TodoApp::currentDdeLaunchType(bool *managedLaunch, QString *instancePath) const
 {
     if (managedLaunch) {
         *managedLaunch = false;
+    }
+    if (instancePath) {
+        instancePath->clear();
     }
 
     QFile cgroupFile(QStringLiteral("/proc/self/cgroup"));
@@ -1492,22 +1543,182 @@ QString TodoApp::currentDdeLaunchType(bool *managedLaunch) const
         *managedLaunch = true;
     }
 
-    const QString instancePath = QStringLiteral("/org/desktopspec/ApplicationManager1/xiaou_2dtodo/%1")
-                                     .arg(runIdMatch.captured(1).toLower());
-    QDBusMessage message = QDBusMessage::createMethodCall(
-        QStringLiteral("org.desktopspec.ApplicationManager1"),
-        instancePath,
-        QStringLiteral("org.freedesktop.DBus.Properties"),
-        QStringLiteral("Get"));
-    message << QStringLiteral("org.desktopspec.ApplicationManager1.Instance")
-            << QStringLiteral("LaunchType");
+    const QString service = QStringLiteral("org.desktopspec.ApplicationManager1");
+    const QString rootPath = QStringLiteral("/org/desktopspec/ApplicationManager1");
+    const QString runId = runIdMatch.captured(1).toLower();
 
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+    QString cgroupApplicationObjectName;
+    const QRegularExpressionMatch applicationMatch =
+        QRegularExpression(QStringLiteral("app-DDE-([^/@\\n]+)@%1\\.service")
+                               .arg(QRegularExpression::escape(runId)))
+            .match(cgroup);
+    if (applicationMatch.hasMatch()) {
+        cgroupApplicationObjectName = applicationMatch.captured(1);
+        cgroupApplicationObjectName.replace(
+            QRegularExpression(QStringLiteral("\\\\x([0-9a-fA-F]{2})")),
+            QStringLiteral("_\\1"));
+    }
+
+    QStringList applicationObjectNames = {
+        cgroupApplicationObjectName,
+        encodeApplicationObjectName(QGuiApplication::desktopFileName()),
+        encodeApplicationObjectName(QStringLiteral("xiaou-todo")),
+        encodeApplicationObjectName(QStringLiteral("io.github.zhangpeng881223.todosimple"))
+    };
+    applicationObjectNames.removeAll(QString());
+    applicationObjectNames.removeDuplicates();
+
+    QString resolvedLaunchType;
+    auto queryApplicationObjects = [&](qsizetype firstIndex) {
+        for (qsizetype index = firstIndex; index < applicationObjectNames.size(); ++index) {
+            const QString candidatePath = QStringLiteral("%1/%2/%3")
+                                              .arg(rootPath, applicationObjectNames.at(index), runId);
+            QDBusMessage message = QDBusMessage::createMethodCall(
+                service,
+                candidatePath,
+                QStringLiteral("org.freedesktop.DBus.Properties"),
+                QStringLiteral("Get"));
+            message << QStringLiteral("org.desktopspec.ApplicationManager1.Instance")
+                    << QStringLiteral("LaunchType");
+
+            const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
+            if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
+                continue;
+            }
+            if (instancePath) {
+                *instancePath = candidatePath;
+            }
+            resolvedLaunchType =
+                reply.arguments().constFirst().value<QDBusVariant>().variant().toString();
+            return true;
+        }
+        return false;
+    };
+
+    if (queryApplicationObjects(0)) {
+        return resolvedLaunchType;
+    }
+
+    const qsizetype knownObjectCount = applicationObjectNames.size();
+    QDBusMessage introspect = QDBusMessage::createMethodCall(
+        service,
+        rootPath,
+        QStringLiteral("org.freedesktop.DBus.Introspectable"),
+        QStringLiteral("Introspect"));
+    const QDBusMessage introspectReply = QDBusConnection::sessionBus().call(introspect);
+    if (introspectReply.type() != QDBusMessage::ReplyMessage || introspectReply.arguments().isEmpty()) {
         return QString();
     }
 
-    return reply.arguments().constFirst().value<QDBusVariant>().variant().toString();
+    QXmlStreamReader xml(introspectReply.arguments().constFirst().toString());
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (!xml.isStartElement() || xml.name() != QLatin1String("node")) {
+            continue;
+        }
+        const QString name = xml.attributes().value(QLatin1String("name")).toString();
+        if (!name.isEmpty() && !name.contains(QLatin1Char('/'))) {
+            applicationObjectNames.append(name);
+        }
+    }
+    applicationObjectNames.removeDuplicates();
+    if (queryApplicationObjects(knownObjectCount)) {
+        return resolvedLaunchType;
+    }
+
+    return QString();
+}
+
+bool TodoApp::isLikelyDdeAutostartLaunch(QString *diagnostic) const
+{
+    auto setDiagnostic = [diagnostic](const QString &message) {
+        if (diagnostic) {
+            *diagnostic = message;
+        }
+    };
+
+    const QString autostartPath =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
+            .filePath(QStringLiteral("autostart/xiaou-todo.desktop"));
+    QFile autostartFile(autostartPath);
+    if (!autostartFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        setDiagnostic(QStringLiteral("entry=missing"));
+        return false;
+    }
+
+    bool inDesktopEntry = false;
+    bool hidden = false;
+    bool matchingExecutable = false;
+    while (!autostartFile.atEnd()) {
+        const QString line = QString::fromUtf8(autostartFile.readLine()).trimmed();
+        if (line.startsWith(QLatin1Char('[')) && line.endsWith(QLatin1Char(']'))) {
+            inDesktopEntry = line == QStringLiteral("[Desktop Entry]");
+            continue;
+        }
+        if (!inDesktopEntry) {
+            continue;
+        }
+        if (line.startsWith(QStringLiteral("Hidden="), Qt::CaseInsensitive)) {
+            hidden = line.mid(line.indexOf(QLatin1Char('=')) + 1).trimmed()
+                         .compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0;
+        } else if (line.startsWith(QStringLiteral("Exec="), Qt::CaseInsensitive)) {
+            matchingExecutable = line.contains(QStringLiteral("xiaou-todo"));
+        }
+    }
+    if (hidden || !matchingExecutable) {
+        setDiagnostic(QStringLiteral("entry=%1, executable=%2")
+                          .arg(hidden ? QStringLiteral("hidden") : QStringLiteral("enabled"),
+                               matchingExecutable ? QStringLiteral("matched") : QStringLiteral("mismatched")));
+        return false;
+    }
+
+    QDBusMessage getUnit = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.systemd1"),
+        QStringLiteral("/org/freedesktop/systemd1"),
+        QStringLiteral("org.freedesktop.systemd1.Manager"),
+        QStringLiteral("GetUnit"));
+    getUnit << QStringLiteral("dde-autostart.service");
+    const QDBusMessage unitReply = QDBusConnection::sessionBus().call(getUnit);
+    if (unitReply.type() != QDBusMessage::ReplyMessage || unitReply.arguments().isEmpty()) {
+        setDiagnostic(QStringLiteral("entry=enabled, systemdUnit=unavailable"));
+        return false;
+    }
+
+    const QDBusObjectPath unitPath = qvariant_cast<QDBusObjectPath>(unitReply.arguments().constFirst());
+    QDBusMessage getTimestamp = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.systemd1"),
+        unitPath.path(),
+        QStringLiteral("org.freedesktop.DBus.Properties"),
+        QStringLiteral("Get"));
+    getTimestamp << QStringLiteral("org.freedesktop.systemd1.Unit")
+                 << QStringLiteral("ActiveEnterTimestampMonotonic");
+    const QDBusMessage timestampReply = QDBusConnection::sessionBus().call(getTimestamp);
+    if (timestampReply.type() != QDBusMessage::ReplyMessage || timestampReply.arguments().isEmpty()) {
+        setDiagnostic(QStringLiteral("entry=enabled, systemdTimestamp=unavailable"));
+        return false;
+    }
+
+    const qulonglong autostartUsec =
+        timestampReply.arguments().constFirst().value<QDBusVariant>().variant().toULongLong();
+    timespec nowSpec{};
+    if (autostartUsec == 0 || clock_gettime(CLOCK_MONOTONIC, &nowSpec) != 0) {
+        setDiagnostic(QStringLiteral("entry=enabled, systemdTimestamp=invalid"));
+        return false;
+    }
+
+    const qulonglong nowUsec =
+        static_cast<qulonglong>(nowSpec.tv_sec) * 1000000ULL +
+        static_cast<qulonglong>(nowSpec.tv_nsec / 1000);
+    constexpr qulonglong AutostartDetectionWindowUsec = 45ULL * 1000000ULL;
+    const bool withinWindow =
+        nowUsec >= autostartUsec && nowUsec - autostartUsec <= AutostartDetectionWindowUsec;
+    const qulonglong elapsedMs = nowUsec >= autostartUsec
+        ? (nowUsec - autostartUsec) / 1000ULL
+        : 0ULL;
+    setDiagnostic(QStringLiteral("entry=enabled, elapsedSinceDdeAutostartMs=%1, withinWindow=%2")
+                      .arg(elapsedMs)
+                      .arg(withinWindow));
+    return withinWindow;
 }
 
 void TodoApp::showDefaultLaunchWindows()
@@ -2279,7 +2490,7 @@ void TodoApp::showAboutDialog()
     dialog->setWindowIcon(icon);
     dialog->setProductIcon(aboutProductIcon());
     dialog->setProductName(QStringLiteral("小U待办"));
-    dialog->setVersion(QStringLiteral("2.0.0"));
+    dialog->setVersion(QCoreApplication::applicationVersion());
     dialog->setDescription(QStringLiteral("一个面向 deepin/UOS 桌面的轻量待办工具。"));
     dialog->setAcknowledgementVisible(false);
     dialog->setLicenseEnabled(false);

@@ -155,7 +155,8 @@ private:
     void showAutostartNoteWindows();
     void showDefaultLaunchWindows();
     void handleInitialLaunch(const QStringList &args, int probeAttempt = 0);
-    QString currentDdeLaunchType(bool *managedLaunch = nullptr) const;
+    QString currentDdeLaunchType(bool *managedLaunch = nullptr, QString *instancePath = nullptr) const;
+    bool isLikelyDdeAutostartLaunch(QString *diagnostic = nullptr) const;
     void loadData();
     void saveNotes() const;
     void saveEvents() const;

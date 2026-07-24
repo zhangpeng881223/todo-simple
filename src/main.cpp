@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
     QApplication::setApplicationName(QStringLiteral("小U待办"));
-    QApplication::setApplicationVersion(QStringLiteral("2.0.0"));
+    QApplication::setApplicationVersion(QStringLiteral(XIAOU_TODO_VERSION));
     QApplication::setOrganizationName(QStringLiteral("XiaoU"));
     QGuiApplication::setDesktopFileName(QStringLiteral("xiaou-todo"));
 

@@ -19,8 +19,9 @@ rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR" "$DIST_DIR"
 DESTDIR="$PKG_DIR" cmake --install build --prefix /usr >/dev/null
 
-# Use the icon theme name so launchers can select the best raster size or scalable SVG.
-sed -i 's|^Icon=.*|Icon=xiaou-todo|' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
+# Use the absolute vector path so DDE Launchpad does not resolve a Deb icon
+# against Linglong's entry root and silently drop it.
+sed -i 's|^Icon=.*|Icon=/usr/share/icons/hicolor/scalable/apps/xiaou-todo.svg|' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 sed -i 's/^Name=.*/Name=小U待办/' "$PKG_DIR/usr/share/applications/xiaou-todo.desktop"
 
 mkdir -p "$PKG_DIR/DEBIAN"
