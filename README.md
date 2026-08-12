@@ -12,13 +12,13 @@ cmake --build build -j
 运行：
 
 ```bash
-DISPLAY=:0 QT_QPA_PLATFORM=xcb ./build/xiaou-todo
+DISPLAY=:0 QT_QPA_PLATFORM=dxcb:xcb ./build/xiaou-todo
 ```
 
 烟测打开所有窗口：
 
 ```bash
-DISPLAY=:0 QT_QPA_PLATFORM=xcb ./build/xiaou-todo --show-all
+DISPLAY=:0 QT_QPA_PLATFORM=dxcb:xcb ./build/xiaou-todo --show-all
 ```
 
 数据目录：

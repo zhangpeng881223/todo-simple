@@ -69,7 +69,11 @@ QIcon productIcon()
 
 int main(int argc, char *argv[])
 {
-    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+    // DTK's unified title bar relies on the Deepin xcb integration. Plain xcb
+    // still launches, but DWindow cannot enable NoTitlebar and consequently
+    // hides the standard minimize, maximize, and close button group.
+    const QByteArray requestedPlatform = qgetenv("QT_QPA_PLATFORM");
+    if (requestedPlatform.isEmpty() || requestedPlatform == "xcb") {
         qputenv("QT_QPA_PLATFORM", "dxcb:xcb");
     }
     if (qEnvironmentVariableIsEmpty("QT_IM_MODULE")) {

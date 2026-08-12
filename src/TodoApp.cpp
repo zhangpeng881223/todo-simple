@@ -224,8 +224,8 @@ Qt::WindowFlags baseViewFlags(bool resizable)
 Qt::WindowFlags noteViewFlags(const QString &layer, bool topLayerSuspended = false)
 {
     const QString normalized = normalizedWindowLayer(layer);
-    // Keep desktop notes as independent normal windows. Qt::Tool makes DDE
-    // stack them above the application's main window even in the normal layer.
+    // Keep notes independent from the main window. Qt::Tool makes DDE stack
+    // them above the main window even when the user selected the normal layer.
     Qt::WindowFlags flags = baseViewFlags(true);
     if (normalized == QStringLiteral("bottom")) {
         flags |= Qt::WindowStaysOnBottomHint;
@@ -235,7 +235,7 @@ Qt::WindowFlags noteViewFlags(const QString &layer, bool topLayerSuspended = fal
     return flags;
 }
 
-void applySkipTaskbarState(QWindow *window)
+void applyNoteWindowManagerState(QWindow *window, const QString &layer)
 {
     if (!window) {
         return;
@@ -253,10 +253,9 @@ void applySkipTaskbarState(QWindow *window)
 
     const Window xWindow = static_cast<Window>(windowId);
     const Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
-    const Atom desiredStates[] = {
-        XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", False),
-        XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", False)
-    };
+    const QString normalizedLayer = normalizedWindowLayer(layer);
+    const Atom skipTaskbar = XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    const Atom skipPager = XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", False);
 
     Atom actualType = None;
     int actualFormat = 0;
@@ -290,6 +289,10 @@ void applySkipTaskbarState(QWindow *window)
         XFree(data);
     }
 
+    const QList<Atom> desiredStates{
+        skipTaskbar,
+        skipPager
+    };
     for (const Atom state : desiredStates) {
         if (!mergedStates.contains(state)) {
             mergedStates.append(state);
@@ -306,7 +309,15 @@ void applySkipTaskbarState(QWindow *window)
                     mergedStates.size());
 
     const Atom wmWindowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
-    const Atom windowType = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+    // WindowStaysOnBottomHint only controls stacking between normal windows;
+    // DDE's Show Desktop action still hides those windows. DDE places a
+    // DESKTOP-type window behind its wallpaper, while a strut-free DOCK window
+    // with BELOW remains above the wallpaper and below normal applications.
+    const Atom windowType = XInternAtom(display,
+                                        normalizedLayer == QStringLiteral("bottom")
+                                            ? "_NET_WM_WINDOW_TYPE_DOCK"
+                                            : "_NET_WM_WINDOW_TYPE_NORMAL",
+                                        False);
     XChangeProperty(display,
                     xWindow,
                     wmWindowType,
@@ -338,18 +349,18 @@ bool isWindowViewable(QWindow *window)
     return viewable;
 }
 
-void scheduleSkipTaskbarState(QWindow *window)
+void scheduleNoteWindowManagerState(QWindow *window, const QString &layer)
 {
     if (!window) {
         return;
     }
-    applySkipTaskbarState(window);
+    applyNoteWindowManagerState(window, layer);
     QPointer<QWindow> guardedWindow(window);
-    QTimer::singleShot(0, window, [guardedWindow]() {
-        applySkipTaskbarState(guardedWindow.data());
+    QTimer::singleShot(0, window, [guardedWindow, layer]() {
+        applyNoteWindowManagerState(guardedWindow.data(), layer);
     });
-    QTimer::singleShot(160, window, [guardedWindow]() {
-        applySkipTaskbarState(guardedWindow.data());
+    QTimer::singleShot(160, window, [guardedWindow, layer]() {
+        applyNoteWindowManagerState(guardedWindow.data(), layer);
     });
 }
 
@@ -1769,7 +1780,7 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     if (m_noteViews.value(noteId)) {
         m_noteViews.value(noteId)->show();
         scheduleWindowIconPublish(m_noteViews.value(noteId));
-        scheduleSkipTaskbarState(m_noteViews.value(noteId));
+        scheduleNoteWindowManagerState(m_noteViews.value(noteId), noteWindowLayer(noteId));
         applyNoteWindowLayer(noteId, true);
         emit notesChanged();
         return;
@@ -1822,10 +1833,10 @@ void TodoApp::openNoteWithLayer(const QString &noteId, const QString &layer)
     applyNoteWindowLayer(noteId, false);
     // Publish skip-taskbar state before the first map so DDE never creates a
     // dock entry for this otherwise-normal desktop note window.
-    scheduleSkipTaskbarState(view);
+    scheduleNoteWindowManagerState(view, noteWindowLayer(noteId));
     view->show();
     scheduleWindowIconPublish(view);
-    scheduleSkipTaskbarState(view);
+    scheduleNoteWindowManagerState(view, noteWindowLayer(noteId));
     applyNoteWindowLayer(noteId, true);
     emit notesChanged();
 }
@@ -3127,12 +3138,15 @@ void TodoApp::applyNoteWindowLayer(const QString &noteId, bool activate)
     if (view->flags() != flags) {
         view->setFlags(flags);
         view->setGeometry(geometry);
+        // _NET_WM_WINDOW_TYPE is a pre-map hint. Apply it after Qt recreates
+        // the native window and before mapping the view again.
+        applyNoteWindowManagerState(view, layer);
         if (wasVisible) {
             view->show();
-            scheduleSkipTaskbarState(view);
+            scheduleNoteWindowManagerState(view, layer);
         }
     } else if (wasVisible) {
-        scheduleSkipTaskbarState(view);
+        scheduleNoteWindowManagerState(view, layer);
     }
 
     if (!wasVisible) {
