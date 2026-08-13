@@ -14,10 +14,11 @@ PKG_DIR="$ROOT_DIR/pkg"
 DIST_DIR="$ROOT_DIR/dist"
 DEB_PATH="$DIST_DIR/小U待办_${VERSION}_${ARCH}.deb"
 
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --clean-first -j"${BUILD_JOBS:-2}"
 rm -rf "$PKG_DIR"
 mkdir -p "$PKG_DIR" "$DIST_DIR"
-DESTDIR="$PKG_DIR" cmake --install build --prefix /usr >/dev/null
+DESTDIR="$PKG_DIR" cmake --install build --prefix /usr --strip >/dev/null
 
 # Use the absolute vector path so DDE Launchpad does not resolve a Deb icon
 # against Linglong's entry root and silently drop it.
