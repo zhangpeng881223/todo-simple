@@ -43,6 +43,7 @@
 #include <QDebug>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -90,6 +91,84 @@ constexpr double DarkThemeWallpaperBlur = 0.70;
 constexpr int DarkThemeMainAppearanceVersion = 4;
 constexpr int TelemetryHeartbeatIntervalMs = 10 * 60 * 1000;
 const char DiscardIfEmptyOnHideKey[] = "discardIfEmptyOnHide";
+
+// 读取 JSON 数据文件。
+// corrupted = true 表示“文件存在但内容不是期望的合法 JSON”——调用方必须先保护现场，
+// 绝不能把这种文件当作“无数据”直接用默认内容覆盖。
+// 文件不存在（首次运行）或无法打开时返回空文档且 corrupted = false。
+QJsonDocument readJsonDataFile(const QString &path, const QString &expectedKind, bool *corrupted, QString *errorString)
+{
+    *corrupted = false;
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QJsonDocument();
+    }
+    const QByteArray raw = file.readAll();
+    file.close();
+
+    if (raw.trimmed().isEmpty()) {
+        // 硬重启打断写入最常见的产物就是空文件，同样按损坏处理。
+        *corrupted = true;
+        if (errorString) {
+            *errorString = QStringLiteral("file is empty");
+        }
+        return QJsonDocument();
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(raw, &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        *corrupted = true;
+        if (errorString) {
+            *errorString = parseError.errorString();
+        }
+        return QJsonDocument();
+    }
+    if (expectedKind == QLatin1String("array") && !document.isArray()) {
+        *corrupted = true;
+        if (errorString) {
+            *errorString = QStringLiteral("not a JSON array");
+        }
+        return QJsonDocument();
+    }
+    if (expectedKind == QLatin1String("object") && !document.isObject()) {
+        *corrupted = true;
+        if (errorString) {
+            *errorString = QStringLiteral("not a JSON object");
+        }
+        return QJsonDocument();
+    }
+    return document;
+}
+
+// 用 QSaveFile 原子写入 JSON：先写同目录临时文件，commit() 内部 fsync + rename 原子替换。
+// 断电/硬重启时目标文件要么是旧完整内容、要么是新完整内容，不会出现空/截断状态。
+// 成功后把本次内容复制为 <name>.bak，作为“最近一次成功保存”的恢复点。
+bool writeJsonDataFileAtomically(const QString &path, const QJsonDocument &document)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning().noquote() << "TodoApp: cannot open for writing" << path << file.errorString();
+        return false;
+    }
+    file.write(document.toJson(QJsonDocument::Indented));
+    if (!file.commit()) {
+        qWarning().noquote() << "TodoApp: atomic commit failed" << path << file.errorString();
+        return false;
+    }
+    const QString backupPath = path + QStringLiteral(".bak");
+    QFile::remove(backupPath);
+    if (!QFile::copy(path, backupPath)) {
+        qWarning().noquote() << "TodoApp: failed to write backup copy" << backupPath;
+    }
+    return true;
+}
+
+QString corruptBackupPathFor(const QString &path)
+{
+    return path + QStringLiteral(".corrupt.")
+        + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMddHHmmss"));
+}
 
 QString encodeApplicationObjectName(const QString &applicationId)
 {
@@ -2707,11 +2786,14 @@ QString TodoApp::exportData()
 
     QJsonObject bundle;
     bundle.insert(QStringLiteral("notes"), m_notes);
-    QFile file(fileName);
+    QSaveFile file(fileName);
     if (!file.open(QIODevice::WriteOnly)) {
         return QStringLiteral("导出失败");
     }
     file.write(QJsonDocument(bundle).toJson(QJsonDocument::Indented));
+    if (!file.commit()) {
+        return QStringLiteral("导出失败");
+    }
     trackTelemetry(QStringLiteral("data_exported"),
                    QStringLiteral("功能点击"),
                    QStringLiteral("data"));
@@ -2990,23 +3072,47 @@ void TodoApp::handleTrayTrigger()
 
 void TodoApp::loadData()
 {
-    auto readArray = [](const QString &path) {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            return QJsonArray();
+    // 读取用户数据文件。文件损坏（硬重启打断写入的典型后果）时：
+    // 1. 先把损坏文件改名保留为 *.corrupt.<时间戳>，绝不用默认数据覆盖现场；
+    // 2. 尝试从最近一次成功保存的 *.bak 恢复；
+    // 3. 恢复成功后立即原子写回主文件，把恢复现场固定下来。
+    auto loadValue = [this](const QString &path, const QString &expectedKind) {
+        QString errorString;
+        bool corrupted = false;
+        QJsonDocument document = readJsonDataFile(path, expectedKind, &corrupted, &errorString);
+        if (!corrupted) {
+            return document;
         }
-        return QJsonDocument::fromJson(file.readAll()).array();
-    };
-    auto readObject = [](const QString &path) {
-        QFile file(path);
-        if (!file.open(QIODevice::ReadOnly)) {
-            return QJsonObject();
+
+        const QString corruptPath = corruptBackupPathFor(path);
+        if (QFile::rename(path, corruptPath)) {
+            qWarning().noquote() << "TodoApp:" << path << "is corrupted (" << errorString
+                                 << "); kept a copy as" << corruptPath;
+        } else {
+            qWarning().noquote() << "TodoApp:" << path << "is corrupted (" << errorString
+                                 << "); failed to preserve the damaged file";
         }
-        return QJsonDocument::fromJson(file.readAll()).object();
+
+        const QString backupPath = path + QStringLiteral(".bak");
+        bool backupCorrupted = false;
+        QString backupErrorString;
+        const QJsonDocument backupDocument = readJsonDataFile(backupPath, expectedKind, &backupCorrupted, &backupErrorString);
+        if (!backupCorrupted && !backupDocument.isNull()) {
+            if (writeJsonDataFileAtomically(path, backupDocument)) {
+                qInfo().noquote() << "TodoApp: recovered" << path << "from" << backupPath;
+                return backupDocument;
+            }
+            qWarning().noquote() << "TodoApp: failed to restore" << path << "from" << backupPath;
+        } else {
+            qWarning().noquote() << "TodoApp: no usable backup at" << backupPath << "for" << path
+                                 << "(" << backupErrorString << ")";
+        }
+        return QJsonDocument();
     };
-    m_notes = readArray(dataFilePath(QStringLiteral("notes.json")));
-    m_events = readArray(dataFilePath(QStringLiteral("events.json")));
-    const QJsonObject savedSettings = readObject(dataFilePath(QStringLiteral("settings.json")));
+
+    m_notes = loadValue(dataFilePath(QStringLiteral("notes.json")), QStringLiteral("array")).array();
+    m_events = loadValue(dataFilePath(QStringLiteral("events.json")), QStringLiteral("array")).array();
+    const QJsonObject savedSettings = loadValue(dataFilePath(QStringLiteral("settings.json")), QStringLiteral("object")).object();
     for (auto it = savedSettings.begin(); it != savedSettings.end(); ++it) {
         m_settings.insert(it.key(), it.value());
     }
@@ -3047,26 +3153,17 @@ void TodoApp::loadData()
 
 void TodoApp::saveNotes() const
 {
-    QFile file(dataFilePath(QStringLiteral("notes.json")));
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(QJsonDocument(m_notes).toJson(QJsonDocument::Indented));
-    }
+    writeJsonDataFileAtomically(dataFilePath(QStringLiteral("notes.json")), QJsonDocument(m_notes));
 }
 
 void TodoApp::saveEvents() const
 {
-    QFile file(dataFilePath(QStringLiteral("events.json")));
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(QJsonDocument(m_events).toJson(QJsonDocument::Indented));
-    }
+    writeJsonDataFileAtomically(dataFilePath(QStringLiteral("events.json")), QJsonDocument(m_events));
 }
 
 void TodoApp::saveSettings() const
 {
-    QFile file(dataFilePath(QStringLiteral("settings.json")));
-    if (file.open(QIODevice::WriteOnly)) {
-        file.write(QJsonDocument(m_settings).toJson(QJsonDocument::Indented));
-    }
+    writeJsonDataFileAtomically(dataFilePath(QStringLiteral("settings.json")), QJsonDocument(m_settings));
 }
 
 void TodoApp::ensureSeedData()

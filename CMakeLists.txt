@@ -7,8 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
+# Deepin 25 / Dtk6 环境只有 Qt6。原先的 find_package(QT NAMES Qt6 Qt5 ...) 在本机会
+# 静默回退到 Qt5 导致配置失败，改为显式查找 Qt6。
+set(QT_VERSION_MAJOR 6)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Network Quick QuickControls2 Widgets)
 find_package(Dtk6Gui REQUIRED)
 find_package(Dtk6Widget REQUIRED)
 find_package(X11 REQUIRED)
