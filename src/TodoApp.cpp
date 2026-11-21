@@ -3409,9 +3409,13 @@ QString TodoApp::sendPromptToUosAi(const QString &prompt) const
         "best_x=$X; best_y=$Y; best_w=$WIDTH; best_h=$HEIGHT; "
         "xdotool windowraise \"$best_id\" windowactivate --sync \"$best_id\" 2>/dev/null || true; "
         "sleep 0.2; "
-        "input_x=$((best_x + best_w / 2)); input_y=$((best_y + best_h - 105)); "
-        "xdotool mousemove --sync \"$input_x\" \"$input_y\" click 1; "
-        "sleep 0.15; "
+        // Start a fresh conversation before pasting. The UOS AI 3.3 home page
+        // shows preset scenario cards; clicking a fixed offset near the bottom
+        // used to hit the "多文件综合报告生成" card, which attached three
+        // unrelated sample files to the summary prompt. Ctrl+N clears any
+        // pending composer state (including attachments) and focuses the input.
+        "xdotool key --clearmodifiers ctrl+n; "
+        "sleep 0.4; "
         "xdotool key --clearmodifiers ctrl+a; "
         "xdotool key --clearmodifiers ctrl+v; "
         "sleep 0.2; "
